@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>リスクモニター — 隠れBTC集中とFunding過熱</title>
+<style>
+  :root{--bg:#0a0e14;--panel:#111722;--edge:#1c2533;--ink:#d4dce6;--dim:#5a6b80;--faint:#36424f;
+        --gold:#e8c84a;--green:#3ecb78;--red:#e8504a;--blue:#5b9cf6;--purple:#a78bfa}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;padding:16px 14px 60px;max-width:600px;margin:0 auto}
+  h1{font-size:16px;font-weight:700;margin-bottom:3px}
+  .sub{font-size:10.5px;color:var(--dim);margin-bottom:14px;line-height:1.6}
+  .card{background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:13px;margin-bottom:12px}
+  .card .label{font-size:9px;color:var(--dim);letter-spacing:.14em;text-transform:uppercase;margin-bottom:9px}
+  .row{display:flex;gap:8px;margin-bottom:8px}
+  input{background:#070b11;border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-size:14px;padding:9px 10px;outline:none;flex:1;min-width:0}
+  button{cursor:pointer;font-family:inherit;border:none;border-radius:6px;font-weight:700}
+  .seg{display:flex;gap:6px;flex:1}
+  .seg button{flex:1;background:#070b11;border:1px solid var(--edge);color:var(--dim);font-size:12px;padding:9px;border-radius:6px}
+  .seg button.onL{color:var(--green);border-color:var(--green)}
+  .seg button.onS{color:var(--red);border-color:var(--red)}
+  .btn-add{width:100%;background:var(--edge);color:var(--ink);padding:10px;font-size:12px}
+  .btn-calc{width:100%;background:var(--blue);color:#04101f;padding:12px;font-size:14px;margin-top:6px}
+  .btn-calc.busy{opacity:.6;pointer-events:none}
+  .pos-row{display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid rgba(28,37,51,.6);font-size:12px}
+  .pos-row:last-child{border-bottom:none}
+  .p-dir{font-size:9px;font-weight:800;padding:1px 6px;border-radius:4px}
+  .p-dir.L{background:rgba(62,203,120,.15);color:var(--green)}
+  .p-dir.S{background:rgba(232,80,74,.15);color:var(--red)}
+  .p-del{background:none;border:none;color:var(--faint);margin-left:auto}
+  .big{background:#070b11;border-radius:9px;padding:14px;text-align:center;margin-bottom:8px}
+  .big .v{font-family:ui-monospace,monospace;font-size:26px;font-weight:800;line-height:1.1}
+  .big .k{font-size:10px;color:var(--dim);margin-top:4px}
+  .v.warn{color:var(--red)}.v.ok{color:var(--green)}.v.mid{color:var(--gold)}
+  .verdict{padding:10px 12px;border-radius:8px;font-size:11.5px;font-weight:600;line-height:1.7}
+  .verdict.good{background:rgba(62,203,120,.08);color:var(--green)}
+  .verdict.bad{background:rgba(232,80,74,.08);color:var(--red)}
+  .verdict.mid{background:rgba(232,200,74,.06);color:var(--gold)}
+  .corr-grid{font-family:ui-monospace,monospace;font-size:10px;border-collapse:collapse;margin:10px auto 4px}
+  .corr-grid td,.corr-grid th{padding:5px 7px;text-align:center;border:1px solid #1a2230}
+  .corr-grid th{color:var(--dim);font-weight:600}
+  .fund-row{display:flex;align-items:center;gap:9px;padding:8px 2px;border-bottom:1px solid rgba(28,37,51,.6)}
+  .fund-row:last-child{border-bottom:none}
+  .f-sym{font-size:13px;font-weight:700;width:52px}
+  .f-bar-track{flex:1;height:6px;background:#070b11;border-radius:3px;position:relative}
+  .f-center{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--faint)}
+  .f-fill{position:absolute;top:0;bottom:0;border-radius:3px}
+  .f-val{font-family:ui-monospace,monospace;font-size:10.5px;width:64px;text-align:right}
+  .f-tag{font-size:9px;font-weight:700;width:56px;text-align:right}
+  .hint{font-size:9.5px;color:var(--faint);line-height:1.6;margin-top:8px}
+  .empty{text-align:center;color:var(--faint);font-size:11px;padding:18px;line-height:1.7}
+</style>
+</head>
+<body>
+<h1>リスクモニター</h1>
+<div class="sub">「分散したつもりの一極集中」と「過熱したファンディング」— 口座が飛ぶ2大パターンを事前に見る。</div>
+
+<div class="card">
+  <div class="label">① 今のポジションを入れる（銘柄・方向・証拠金換算のサイズ$）</div>
+  <div class="row">
+    <input id="p-sym" placeholder="銘柄 (SOL)" autocapitalize="characters">
+    <div class="seg"><button id="pb-l" class="onL" onclick="setPDir('L')">L</button><button id="pb-s" onclick="setPDir('S')">S</button></div>
+    <input id="p-size" type="number" step="any" placeholder="サイズ$">
+  </div>
+  <button class="btn-add" onclick="addPos()">＋ ポジション追加</button>
+  <div id="posList"></div>
+  <button class="btn-calc" id="calcBtn" onclick="calc()">📡 リスクを計算（相関＋Funding）</button>
+</div>
+
+<div id="resultArea"></div>
+
+<script>
+const KLINE_API="https://api.crypto.com/exchange/v1/public/get-candlestick";
+const VAL_API="https://api.crypto.com/exchange/v1/public/get-valuations";
+const LS="risk_positions_v1";
+let positions=[]; let pdir="L";
+try{ positions=JSON.parse(localStorage.getItem(LS)||"[]"); }catch(e){ positions=[]; }
+const save=()=>{try{localStorage.setItem(LS,JSON.stringify(positions))}catch(e){}};
+const $=id=>document.getElementById(id);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+function setPDir(d){ pdir=d; $("pb-l").className=d==="L"?"onL":""; $("pb-s").className=d==="S"?"onS":""; }
+function addPos(){
+  const sym=($("p-sym").value||"").trim().toUpperCase();
+  const size=parseFloat($("p-size").value);
+  if(!sym||!(size>0)){alert("銘柄とサイズは必須");return;}
+  positions.push({sym,dir:pdir,size});
+  save(); renderPos();
+  $("p-sym").value="";$("p-size").value="";
+}
+function delPos(i){ positions.splice(i,1); save(); renderPos(); }
+function renderPos(){
+  const box=$("posList");
+  if(positions.length===0){box.innerHTML='<div class="empty">ポジション未登録。BTCも含めて全部入れてください。</div>';return;}
+  box.innerHTML=positions.map((p,i)=>`<div class="pos-row">
+    <span class="p-dir ${p.dir}">${p.dir==="L"?"LONG":"SHORT"}</span>
+    <b>${p.sym}</b><span style="color:var(--dim);font-family:ui-monospace,monospace">$${p.size.toLocaleString()}</span>
+    <button class="p-del" onclick="delPos(${i})">✕</button></div>`).join("");
+}
+
+// ── データ ──
+async function fetchCloses(sym){
+  try{
+    const res=await fetch(KLINE_API+"?instrument_name="+sym+"_USDT&timeframe=1D&count=70");
+    const j=await res.json();
+    let d=(j.result&&j.result.data)||j.data||[];
+    if(d.length<35)return null;
+    d.sort((a,b)=>(a.t||new Date(a.timestamp).getTime())-(b.t||new Date(b.timestamp).getTime()));
+    return d.map(x=>parseFloat(x.c!=null?x.c:x.close)).filter(c=>c>0);
+  }catch(e){return null;}
+}
+async function fetchFunding(sym){
+  // Crypto.comのPERPのファンディング。取れない銘柄はnull（UIで「取得不可」表示）
+  try{
+    const res=await fetch(VAL_API+"?instrument_name="+sym+"USD-PERP&valuation_type=funding_hist&count=1");
+    const j=await res.json();
+    const d=(j.result&&j.result.data)||j.data||[];
+    if(d.length===0)return null;
+    return parseFloat(d[0].v)*100;   // %表記に
+  }catch(e){return null;}
+}
+function rets(closes){ const r=[]; for(let i=1;i<closes.length;i++) r.push(Math.log(closes[i]/closes[i-1])); return r; }
+function corr(a,b){
+  const n=Math.min(a.length,b.length); if(n<20)return null;
+  const A=a.slice(-n),B=b.slice(-n);
+  const ma=A.reduce((x,y)=>x+y,0)/n,mb=B.reduce((x,y)=>x+y,0)/n;
+  let sab=0,sa=0,sb=0;
+  for(let i=0;i<n;i++){const da=A[i]-ma,db=B[i]-mb;sab+=da*db;sa+=da*da;sb+=db*db;}
+  return sab/Math.sqrt(sa*sb||1);
+}
+function std(a){const m=a.reduce((x,y)=>x+y,0)/a.length;return Math.sqrt(a.reduce((s,x)=>s+(x-m)*(x-m),0)/(a.length-1));}
+
+// ── 計算 ──
+async function calc(){
+  if(positions.length===0){alert("先にポジションを入れてください");return;}
+  const btn=$("calcBtn"); btn.classList.add("busy");
+  const syms=[...new Set(positions.map(p=>p.sym))];
+  if(!syms.includes("BTC")) syms.push("BTC");   // 基準として必ず取る
+  const data={}, funding={};
+  for(let i=0;i<syms.length;i++){
+    btn.textContent=`📡 取得中… ${i+1}/${syms.length}`;
+    data[syms[i]]=await fetchCloses(syms[i]);
+    await sleep(100);
+    funding[syms[i]]=await fetchFunding(syms[i]);
+    await sleep(100);
+  }
+  btn.textContent="📡 リスクを計算（相関＋Funding）";
+  btn.classList.remove("busy");
+  render(data,funding);
+}
+
+function render(data,funding){
+  const area=$("resultArea");
+  const btcR=data["BTC"]?rets(data["BTC"]):null;
+  if(!btcR){area.innerHTML='<div class="card"><div class="verdict bad">BTCのデータが取得できませんでした。少し待って再計算してください。</div></div>';return;}
+  const btcVol=std(btcR);
+
+  // ① BTC換算エクスポージャー: Σ ±size × corr(i,BTC) × (vol_i/vol_BTC)
+  let btcEquiv=0, gross=0, rows=[];
+  for(const p of positions){
+    const r=data[p.sym]?rets(data[p.sym]):null;
+    const sign=p.dir==="L"?1:-1;
+    gross+=p.size;
+    if(p.sym==="BTC"){ btcEquiv+=sign*p.size; rows.push({...p,beta:1}); continue; }
+    if(!r){ rows.push({...p,beta:null}); continue; }
+    const c=corr(r,btcR)||0;
+    const beta=c*(std(r)/btcVol);
+    btcEquiv+=sign*p.size*beta;
+    rows.push({...p,beta});
+  }
+  const concentration=gross>0?Math.abs(btcEquiv)/gross*100:0;
+
+  // ② 相関マトリクス（保有銘柄同士）
+  const held=[...new Set(positions.map(p=>p.sym))];
+  let matrix="";
+  if(held.length>=2){
+    matrix='<table class="corr-grid"><tr><th></th>'+held.map(s=>`<th>${s}</th>`).join("")+"</tr>";
+    for(const a of held){
+      matrix+=`<tr><th>${a}</th>`;
+      for(const b of held){
+        if(a===b){matrix+='<td style="color:var(--faint)">1.0</td>';continue;}
+        const ra=data[a]?rets(data[a]):null, rb=data[b]?rets(data[b]):null;
+        const c=(ra&&rb)?corr(ra,rb):null;
+        if(c==null){matrix+="<td>—</td>";continue;}
+        const col=c>0.75?"var(--red)":c>0.5?"var(--gold)":"var(--green)";
+        matrix+=`<td style="color:${col}">${c.toFixed(2)}</td>`;
+      }
+      matrix+="</tr>";
+    }
+    matrix+="</table>";
+  }
+
+  // ③ Funding
+  let fundHtml="";
+  for(const s of held){
+    const f=funding[s];
+    if(f==null){ fundHtml+=`<div class="fund-row"><span class="f-sym">${s}</span><span style="font-size:10px;color:var(--faint)">Funding取得不可（この取引所に上場なし）</span></div>`; continue; }
+    // 8h基準: ±0.01%が中立。±0.05%超は過熱の目安
+    const pct=Math.max(-0.12,Math.min(0.12,f));
+    const w=Math.abs(pct)/0.12*50;
+    const left=pct>=0?50:50-w;
+    const col=Math.abs(f)>0.05?"var(--red)":Math.abs(f)>0.02?"var(--gold)":"var(--green)";
+    const tag=f>0.05?"L過熱🔥":f<-0.05?"S過熱🔥":Math.abs(f)>0.02?"やや偏り":"中立";
+    fundHtml+=`<div class="fund-row"><span class="f-sym">${s}</span>
+      <div class="f-bar-track"><div class="f-center"></div><div class="f-fill" style="left:${left}%;width:${w}%;background:${col}"></div></div>
+      <span class="f-val" style="color:${col}">${f>=0?"+":""}${f.toFixed(4)}%</span>
+      <span class="f-tag" style="color:${col}">${tag}</span></div>`;
+  }
+
+  // 判定文
+  let vcls,vtxt;
+  if(concentration>=70) { vcls="bad"; vtxt=`実効BTC集中度 ${concentration.toFixed(0)}%。銘柄を分けていても、中身はほぼ「BTC1本」と同じ。BTCが逆行したら全ポジ同時に痛む。サイズ縮小か、相関の低い組み合わせへ。`; }
+  else if(concentration>=45){ vcls="mid"; vtxt=`実効BTC集中度 ${concentration.toFixed(0)}%。それなりにBTC次第の構成。BTCの日足レベル（S/R）を全ポジの生命線として意識する必要がある。`; }
+  else { vcls="good"; vtxt=`実効BTC集中度 ${concentration.toFixed(0)}%。方向・銘柄の分散が効いている構成。`; }
+
+  area.innerHTML=`
+  <div class="card">
+    <div class="label">② 隠れBTC集中度</div>
+    <div class="big"><div class="v ${concentration>=70?"warn":concentration>=45?"mid":"ok"}">${concentration.toFixed(0)}%</div>
+      <div class="k">ポジション全体のうち「実質BTC」の割合（相関×ボラで換算）</div></div>
+    <div class="verdict ${vcls}">${vtxt}</div>
+    ${matrix?`<div class="label" style="margin-top:12px">保有銘柄どうしの相関（60日）— 赤=0.75超は"実質同じポジ"</div>${matrix}`:""}
+    <div class="hint">BTC換算 = サイズ × BTCとの相関 × ボラ倍率。例: BTC相関0.9でボラ2倍のアルト$100は、BTC$180持ってるのと同じ値動きリスク。</div>
+  </div>
+  <div class="card">
+    <div class="label">③ Funding（資金調達率・8h）— 偏り＝ポジションの混み具合</div>
+    ${fundHtml||'<div class="empty">データなし</div>'}
+    <div class="hint">プラス過熱=ロングが混んでいる→ロングスクイーズ(急落)の燃料。マイナス過熱=ショートが混んでいる→踏み上げの燃料。自分のポジと同じ側が過熱している時ほど、逆行が急になりやすい。</div>
+  </div>`;
+}
+renderPos();
+</script>
+</body>
+</html>
