@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>レンジ監視レーダー</title>
+<style>
+  :root {
+    --bg: #0a0e14; --panel: #111722; --panel-edge: #1c2533;
+    --ink: #d4dce6; --ink-dim: #5a6b80; --ink-faint: #36424f;
+    --gold: #e8c84a; --green: #3ecb78; --red: #e8504a; --amber: #f0993c;
+    --track: #1a222e; --blue: #5b9cf6;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;padding:16px 14px 60px;max-width:560px;margin:0 auto}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px}
+  h1{font-size:17px;font-weight:700}
+  h1 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:7px;vertical-align:middle;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .sub{font-size:10px;color:var(--ink-dim);letter-spacing:.14em;text-transform:uppercase}
+  .status-line{font-size:11px;color:var(--ink-dim);margin:10px 0 16px;display:flex;justify-content:space-between}
+  .status-line .live{color:var(--green)}
+  .add-card{background:var(--panel);border:1px solid var(--panel-edge);border-radius:10px;padding:14px;margin-bottom:18px}
+  .add-card .label{font-size:9px;color:var(--ink-dim);letter-spacing:.14em;text-transform:uppercase;margin-bottom:9px}
+  .row{display:flex;gap:8px;margin-bottom:8px}.row:last-child{margin-bottom:0}
+  input{flex:1;background:#070b11;border:1px solid var(--panel-edge);border-radius:6px;color:var(--ink);font-size:15px;padding:10px 11px;outline:none;font-family:inherit;min-width:0}
+  input::placeholder{color:var(--ink-faint)}input:focus{border-color:#2f4666}
+  button{cursor:pointer;font-family:inherit;border:none;border-radius:6px;font-weight:700}
+  .btn-add{background:var(--gold);color:#1a1505;padding:10px 18px;font-size:14px;white-space:nowrap}
+  .btn-add:active{transform:translateY(1px)}
+  .hint{font-size:10px;color:var(--ink-faint);margin-top:8px;line-height:1.5}
+  .presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .preset-btn{background:#070b11;border:1px solid var(--panel-edge);color:var(--ink-dim);font-size:12px;padding:6px 11px;border-radius:5px;font-weight:600}
+  .preset-btn:active{background:var(--panel-edge);color:var(--ink)}
+  .preset-btn.loading{opacity:.5;pointer-events:none}
+  .watch{background:var(--panel);border:1px solid var(--panel-edge);border-radius:10px;padding:14px;margin-bottom:11px;transition:border-color .3s}
+  .watch.alert-low{border-color:var(--green);box-shadow:0 0 0 1px var(--green) inset}
+  .watch.alert-high{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset}
+  .watch.near{border-color:var(--amber)}
+  .watch.breakout-up{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset}
+  .watch.breakout-down{border-color:#a855f7;box-shadow:0 0 0 1px #a855f7 inset}
+  .w-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:3px}
+  .w-sym{font-size:15px;font-weight:700;letter-spacing:.03em}
+  .w-price{font-family:ui-monospace,monospace;font-size:17px;font-weight:700}
+  .w-meta{display:flex;justify-content:space-between;font-size:10px;color:var(--ink-dim);margin-bottom:13px}
+  .w-change.up{color:var(--green)}.w-change.down{color:var(--red)}
+  .bar-wrap{position:relative;margin:0 2px}
+  .bar{height:6px;background:var(--track);border-radius:3px;position:relative;overflow:visible}
+  .bar-fill{position:absolute;top:0;left:0;bottom:0;background:linear-gradient(90deg,var(--green),var(--amber) 50%,var(--red));border-radius:3px;opacity:.25;width:100%}
+  .marker{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:var(--ink);border:3px solid var(--bg);transform:translate(-50%,-50%);transition:left .6s cubic-bezier(.4,0,.2,1);box-shadow:0 0 0 1px var(--panel-edge);z-index:2}
+  .marker.lo{background:var(--green)}.marker.hi{background:var(--red)}.marker.out-hi{background:var(--blue)}.marker.out-lo{background:#a855f7}
+  .marker-star{position:absolute;top:50%;transform:translate(-50%,-60%);font-size:15px;line-height:1;color:var(--gold);z-index:3;text-shadow:0 0 5px rgba(0,0,0,.9);pointer-events:none}
+  .marker-star.active{animation:pulse 1.2s infinite}
+  .watch.retest{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+  .retest-row{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:600;background:rgba(232,200,74,.1);color:var(--gold)}
+  .retest-row .tgt-price{font-family:ui-monospace,monospace;font-size:13px}
+  .bar-labels{display:flex;justify-content:space-between;margin-top:9px;font-family:ui-monospace,monospace;font-size:11px}
+  .bar-labels .lo-l{color:var(--green)}.bar-labels .hi-l{color:var(--red)}.bar-labels .pos-l{color:var(--ink-dim)}
+  .w-foot{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:11px;border-top:1px solid var(--panel-edge)}
+  .w-state{font-size:11px;font-weight:700}
+  .w-state.safe{color:var(--ink-dim)}.w-state.near{color:var(--amber)}
+  .w-state.retest{color:var(--gold)}
+  .w-state.hit-lo{color:var(--green)}.w-state.hit-hi{color:var(--red)}
+  .w-state.breakout-up{color:var(--blue)}.w-state.breakout-down{color:#a855f7}
+  .btn-del{background:transparent;color:var(--ink-faint);font-size:11px;padding:4px 8px;border:1px solid var(--ink-faint);border-radius:5px}
+  .btn-del:active{color:var(--red);border-color:var(--red)}
+  .empty{text-align:center;color:var(--ink-faint);font-size:12px;padding:40px 20px;line-height:1.7}
+  .toolbar{display:flex;gap:8px;margin-bottom:14px}
+  /* トースト（画面上部に何が鳴ったか表示） */
+  #toastBox{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99;width:calc(100% - 28px);max-width:520px;pointer-events:none}
+  .toast{background:#1a2233;border:1px solid var(--gold);border-left:4px solid var(--gold);color:var(--ink);font-size:12.5px;font-weight:600;padding:11px 13px;border-radius:9px;margin-bottom:7px;box-shadow:0 4px 20px rgba(0,0,0,.5);animation:toastIn .25s ease;line-height:1.5}
+  .toast.out{animation:toastOut .4s ease forwards}
+  .toast .t-time{font-family:ui-monospace,monospace;font-size:9.5px;color:var(--ink-dim);margin-left:8px}
+  @keyframes toastIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes toastOut{to{opacity:0;transform:translateY(-12px)}}
+  /* アラート履歴 */
+  .alert-log{background:var(--panel);border:1px solid var(--panel-edge);border-radius:9px;margin-bottom:14px;overflow:hidden}
+  .alert-log-head{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;font-size:10px;color:var(--ink-dim);letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
+  .alert-log-head .badge-n{background:var(--gold);color:#1a1505;font-size:9.5px;font-weight:800;padding:1px 7px;border-radius:8px;letter-spacing:0}
+  .alert-log-body{max-height:180px;overflow-y:auto;border-top:1px solid var(--panel-edge)}
+  .alert-log-body.hidden{display:none}
+  .log-row{display:flex;gap:8px;padding:7px 12px;font-size:11px;border-bottom:1px solid rgba(28,37,51,.5);line-height:1.5}
+  .log-row:last-child{border-bottom:none}
+  .log-time{font-family:ui-monospace,monospace;font-size:9.5px;color:var(--ink-faint);flex-shrink:0;padding-top:1px}
+  .log-msg{color:var(--ink-dim)}
+  .log-row.fresh .log-msg{color:var(--ink)}
+  .log-empty{padding:14px;text-align:center;font-size:10.5px;color:var(--ink-faint)}
+  .log-clear{background:none;border:none;color:var(--ink-faint);font-size:9.5px;cursor:pointer;padding:2px 4px}
+  .btn-tool{flex:1;background:var(--panel);border:1px solid var(--panel-edge);color:var(--ink-dim);font-size:11px;padding:8px;font-weight:600}
+  .btn-tool.on{color:var(--gold);border-color:var(--gold)}
+  /* 次の目標表示 */
+  .target-row{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:600}
+  .target-row.up{background:rgba(91,156,246,.1);color:var(--blue)}
+  .target-row.down{background:rgba(168,85,247,.1);color:#a855f7}
+  .target-row .tgt-label{opacity:.7}
+  .target-row .tgt-price{font-family:ui-monospace,monospace;font-size:13px}
+  /* スキャン */
+  .btn-scan{flex:1;background:var(--panel);border:1px solid var(--blue);color:var(--blue);font-size:11px;padding:8px;font-weight:700}
+  .btn-scan.on{background:rgba(91,156,246,.12)}
+  .btn-rot{flex:1;background:var(--panel);border:1px solid #a78bfa;color:#a78bfa;font-size:11px;padding:8px;font-weight:700}
+  .btn-rot.on{background:rgba(167,139,250,.12)}
+  /* 回転力ランキング */
+  .rot-card{background:var(--panel);border:1px solid var(--panel-edge);border-radius:9px;padding:11px 13px;margin-bottom:8px;display:flex;align-items:center;gap:11px}
+  .rot-rank{font-family:ui-monospace,monospace;font-size:15px;font-weight:800;color:var(--ink-faint);width:22px;text-align:center;flex-shrink:0}
+  .rot-card.top1 .rot-rank{color:#a78bfa}
+  .rot-main{flex:1;min-width:0}
+  .rot-head{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+  .rot-sym{font-size:14px;font-weight:700}
+  .rot-price{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--ink-dim)}
+  .rot-fit{margin-left:auto;font-size:9.5px;font-weight:800;padding:1px 7px;border-radius:4px}
+  .rot-fit.good{background:rgba(167,139,250,.16);color:#a78bfa}
+  .rot-fit.mid{background:rgba(90,107,128,.2);color:var(--ink-dim)}
+  .rot-fit.bad{background:rgba(91,156,246,.14);color:var(--blue)}
+  .rbar-row{display:flex;align-items:center;gap:7px;margin-top:4px}
+  .rbar-label{font-size:9px;color:var(--ink-faint);width:44px;flex-shrink:0}
+  .rbar-track{flex:1;height:5px;background:#070b11;border-radius:3px;overflow:hidden}
+  .rbar-fill{height:100%;border-radius:3px}
+  .rbar-fill.rot{background:linear-gradient(90deg,#5b4a8a,#a78bfa)}
+  .rbar-fill.wave{background:linear-gradient(90deg,#8a6a2a,#e8c84a)}
+  .rbar-val{font-family:ui-monospace,monospace;font-size:9.5px;color:var(--ink-dim);width=40px;width:44px;text-align:right;flex-shrink:0}
+  .rot-note{font-size:9.5px;color:var(--ink-faint);line-height:1.6;margin:2px 2px 10px}
+  .scan-wrap{margin-bottom:18px}
+  .scan-title{font-size:9px;color:var(--ink-dim);letter-spacing:.14em;text-transform:uppercase;margin:0 2px 8px;display:flex;justify-content:space-between}
+  .scan-card{background:var(--panel);border:1px solid var(--panel-edge);border-radius:9px;padding:11px 13px;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+  .scan-card:last-child{margin-bottom:0}
+  .sc-main{flex:1;min-width:0}
+  .sc-top{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}
+  .sc-sym{font-size:14px;font-weight:700}
+  .sc-price{font-family:ui-monospace,monospace;font-size:11px;color:var(--ink-dim)}
+  .sc-tags{display:flex;flex-wrap:wrap;gap:5px}
+  .tag{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:.02em}
+  .tag.up{background:rgba(62,203,120,.14);color:var(--green)}
+  .tag.down{background:rgba(232,80,74,.14);color:var(--red)}
+  .tag.res{background:rgba(232,80,74,.1);color:var(--amber)}
+  .tag.sup{background:rgba(62,203,120,.1);color:var(--green)}
+  .sc-add{background:var(--gold);color:#1a1505;font-size:12px;padding:8px 14px;white-space:nowrap;border-radius:6px;font-weight:700}
+  .sc-add:active{transform:translateY(1px)}
+  .sc-add.done{background:var(--panel-edge);color:var(--ink-dim)}
+  .scan-empty{text-align:center;color:var(--ink-faint);font-size:11px;padding:16px;line-height:1.6}
+  .scan-card.has-setup{border-left:3px solid var(--panel-edge)}
+  .scan-card.has-setup.long{border-left-color:var(--green)}
+  .scan-card.has-setup.short{border-left-color:var(--red)}
+  .sc-dir{font-size:9px;font-weight:800;padding:2px 6px;border-radius:4px;letter-spacing:.04em}
+  .sc-dir.long{background:rgba(62,203,120,.16);color:var(--green)}
+  .sc-dir.short{background:rgba(232,80,74,.16);color:var(--red)}
+  .sc-rr{margin-left:auto;font-family:ui-monospace,monospace;font-size:12px;font-weight:800;color:var(--gold);padding:1px 7px;border:1px solid rgba(232,200,74,.35);border-radius:5px}
+  .sc-levels{font-family:ui-monospace,monospace;font-size:10px;color:var(--ink-dim);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 壁アタック詳細 */
+  .btn-detail{width:100%;background:transparent;border:1px dashed var(--panel-edge);color:var(--ink-dim);font-size:10.5px;padding:7px;margin-top:10px;font-weight:600}
+  .btn-detail.on{color:var(--gold);border-color:rgba(232,200,74,.4);border-style:solid}
+  .detail-panel{margin-top:10px;padding-top:10px;border-top:1px solid var(--panel-edge)}
+  .attack-grid{display:flex;gap:8px;margin-bottom:10px}
+  .attack-box{flex:1;background:#070b11;border-radius:7px;padding:8px 9px}
+  .attack-box .ab-label{font-size:9px;color:var(--ink-faint);letter-spacing:.06em;margin-bottom:4px}
+  .attack-box .ab-total{font-family:ui-monospace,monospace;font-size:17px;font-weight:700;line-height:1}
+  .attack-box.hi .ab-total{color:var(--red)}
+  .attack-box.lo .ab-total{color:var(--green)}
+  .attack-box .ab-split{font-size:9.5px;color:var(--ink-dim);margin-top:4px;line-height:1.5}
+  .attack-box .wick-n{color:var(--ink)}
+  .attack-box .body-n{color:var(--gold);font-weight:700}
+  .retest-count-badge{display:inline-block;background:rgba(232,200,74,.14);color:var(--gold);font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px}
+  .candle-wrap{background:#070b11;border-radius:8px;padding:10px 6px 8px;overflow-x:auto}
+  .candle-legend{display:flex;gap:14px;font-size:9px;color:var(--ink-faint);margin-top:7px;padding:0 2px}
+  .candle-legend span{display:flex;align-items:center;gap:4px}
+  .leg-swatch{display:inline-block;width:9px;height:9px;border-radius:2px}
+  .leg-wick{width:2px;height:9px;background:var(--ink-dim);border-radius:1px}
+  .detail-loading{text-align:center;color:var(--ink-faint);font-size:10.5px;padding:14px}
+  .tf-select{display:flex;gap:5px;margin-bottom:8px}
+  .tf-btn{background:#070b11;border:1px solid var(--panel-edge);color:var(--ink-dim);font-size:10px;padding:4px 9px;border-radius:5px;font-weight:600}
+  .tf-btn.on{color:var(--gold);border-color:var(--gold)}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot"></span>レンジ監視レーダー</h1>
+  <span class="sub">FUTURES</span>
+</header>
+<div class="status-line">
+  <span id="clock">--:--:--</span>
+  <span id="feed" class="live">接続中…</span>
+</div>
+<div id="toastBox"></div>
+<div class="toolbar">
+  <button class="btn-tool" id="notifyBtn" onclick="reqNotify()">🔔 通知を許可</button>
+  <button class="btn-tool on" id="soundBtn" onclick="toggleSound()">🔊 音 ON</button>
+  <button class="btn-tool" id="voiceBtn" onclick="toggleVoice()">🗣 読み上げ OFF</button>
+</div>
+<div class="alert-log">
+  <div class="alert-log-head" onclick="toggleLog()">
+    <span>📜 アラート履歴 <span class="badge-n" id="logBadge" style="display:none">0</span></span>
+    <span><button class="log-clear" onclick="event.stopPropagation();clearLog()">クリア</button> <span id="logArrow">▼</span></span>
+  </div>
+  <div class="alert-log-body hidden" id="logBody"><div class="log-empty">まだアラートはありません</div></div>
+</div>
+<div class="add-card">
+  <div class="label">ワンタップで追加（24h高安レンジ + 次の目標自動計算）</div>
+  <div class="presets" id="presets"></div>
+  <div class="label" style="margin-top:12px">手動で追加</div>
+  <div class="row"><input id="in-sym" placeholder="銘柄 (例: BTC, ETH)" autocapitalize="characters"></div>
+  <div class="row">
+    <input id="in-lo" type="number" step="any" placeholder="下限価格">
+    <input id="in-hi" type="number" step="any" placeholder="上限価格">
+  </div>
+  <div class="row"><button class="btn-add" onclick="addWatch()" style="flex:1">追加して監視開始</button></div>
+  <div class="hint">レンジ内→逆張り通知。ブレイクアウト→次のレジスタンス/サポートを自動表示。</div>
+</div>
+<div class="scan-wrap">
+  <div class="toolbar" style="margin-bottom:10px">
+    <button class="btn-scan" id="scanBtn" onclick="runScan()">🔍 トレンド / 日足S・R をスキャン</button>
+    <button class="btn-rot" id="rotBtn" onclick="runRotScan()">🌀 回転力ランキング</button>
+  </div>
+  <div id="scanResults"></div>
+</div>
+<div id="list"></div>
+
+<script>
+const TICKER_API = "https://api.crypto.com/exchange/v1/public/get-tickers";
+const KLINE_API = "https://api.crypto.com/exchange/v1/public/get-candlestick";
+const NEAR_PCT = 0.5;
+const RETEST_PCT = 0.8;   // ブレイクした境界にこの%以内へ戻ったら「リテスト」
+const FAIL_PCT = 2.0;     // 境界からこの%逆行したらブレイク失敗（記憶リセット）
+const POLL_MS = 8000;
+
+const PRESET_COINS = [
+  { sym:"BTC",  insts:["BTC_USDT","BTCUSD","BTC_USD"] },
+  { sym:"ETH",  insts:["ETH_USDT","ETHUSD","ETH_USD"] },
+  { sym:"SOL",  insts:["SOL_USDT","SOLUSD","SOL_USD"] },
+  { sym:"XRP",  insts:["XRP_USDT","XRPUSD","XRP_USD"] },
+  { sym:"DOGE", insts:["DOGE_USDT","DOGEUSD","DOGE_USD"] },
+  { sym:"XPL",  insts:["XPL_USD","XPLUSD","XPL_USDT"] },
+  { sym:"BONK", insts:["BONK_USDT","BONKUSD","BONK_USD"] },
+  { sym:"PEPE", insts:["PEPE_USDT","PEPEUSD","PEPE_USD"] },
+  { sym:"AVAX", insts:["AVAX_USDT","AVAXUSD","AVAX_USD"] },
+  { sym:"LINK", insts:["LINK_USDT","LINKUSD","LINK_USD"] },
+  { sym:"ONDO", insts:["ONDO_USDT","ONDOUSD","ONDO_USD"] },
+  { sym:"EIGEN",insts:["EIGEN_USDT","EIGENUSD","EIGEN_USD"] },
+  { sym:"XLM",  insts:["XLM_USDT","XLMUSD","XLM_USD"] },
+];
+
+let watches = [];
+let soundOn = true;
+let lastAlertState = {};
+let tickerCache = {};
+let levelCache = {}; // instrument -> {resistances:[], supports:[]}
+let candleCache = {}; // "inst|tf" -> {candles, ts}
+let detailOpen = {};  // watch.id -> bool（詳細パネルの開閉状態）
+let detailTf = {};    // watch.id -> "1h"|"4h"|"1D"（選択中の足）
+let detailLoading = {}; // watch.id -> bool
+const ATTACK_TOUCH_PCT = 0.6;  // 壁アタック判定：この%以内にヒゲが届いたら「アタック」扱い
+const CANDLE_COUNT = 40;       // 表示するローソク本数
+
+function load(){try{watches=JSON.parse(localStorage.getItem("range_watches2")||"[]")}catch{watches=[]}}
+function save(){localStorage.setItem("range_watches2",JSON.stringify(watches))}
+
+function renderPresets(){
+  document.getElementById("presets").innerHTML = PRESET_COINS.map(p =>
+    `<button class="preset-btn" id="pre-${p.sym}" onclick="addPreset('${p.sym}')">${p.sym}</button>`
+  ).join("");
+}
+
+// ── ピボット・スイングレベル計算 ──
+function findSwingHighs(highs, lookback) {
+  const levels = [];
+  for (let i = lookback; i < highs.length - lookback; i++) {
+    let isHigh = true;
+    for (let j = 1; j <= lookback; j++) {
+      if (highs[i] <= highs[i-j] || highs[i] <= highs[i+j]) { isHigh = false; break; }
+    }
+    if (isHigh) levels.push(highs[i]);
+  }
+  return levels;
+}
+function findSwingLows(lows, lookback) {
+  const levels = [];
+  for (let i = lookback; i < lows.length - lookback; i++) {
+    let isLow = true;
+    for (let j = 1; j <= lookback; j++) {
+      if (lows[i] >= lows[i-j] || lows[i] >= lows[i+j]) { isLow = false; break; }
+    }
+    if (isLow) levels.push(lows[i]);
+  }
+  return levels;
+}
+
+async function fetchLevels(inst) {
+  if (levelCache[inst] && Date.now() - levelCache[inst].ts < 300000) return levelCache[inst];
+  try {
+    const res = await fetch(KLINE_API + "?instrument_name=" + inst + "&timeframe=4h");
+    const json = await res.json();
+    const data = (json.result && json.result.data) || json.data || [];
+    if (data.length < 10) return null;
+    // 新しい順→古い順にソート
+    data.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const highs = data.map(d => parseFloat(d.high || d.h));
+    const lows = data.map(d => parseFloat(d.low || d.l));
+    const resistances = [...new Set(findSwingHighs(highs, 2))].sort((a,b) => a-b);
+    const supports = [...new Set(findSwingLows(lows, 2))].sort((a,b) => b-a);
+    levelCache[inst] = { resistances, supports, ts: Date.now() };
+    return levelCache[inst];
+  } catch(e) { return null; }
+}
+
+function getNextResistance(levels, price) {
+  if (!levels || !levels.resistances) return null;
+  for (const r of levels.resistances) { if (r > price * 1.002) return r; }
+  return null;
+}
+function getNextSupport(levels, price) {
+  if (!levels || !levels.supports) return null;
+  for (const s of levels.supports) { if (s < price * 0.998) return s; }
+  return null;
+}
+
+// ── 汎用ローソク足取得（壁アタック分析用）──
+async function fetchCandles(inst, tf, count){
+  const key = inst+"|"+tf;
+  if(candleCache[key] && Date.now()-candleCache[key].ts < 300000) return candleCache[key].candles;
+  try{
+    const res = await fetch(KLINE_API+"?instrument_name="+inst+"&timeframe="+tf+"&count="+count);
+    const json = await res.json();
+    let data = (json.result&&json.result.data)||json.data||[];
+    if(data.length===0) return null;
+    data.sort((a,b)=>(a.t||new Date(a.timestamp).getTime()||0)-(b.t||new Date(b.timestamp).getTime()||0));
+    const candles = data.map(d=>({
+      o: parseFloat(d.o!=null?d.o:d.open),
+      h: parseFloat(d.h!=null?d.h:d.high),
+      l: parseFloat(d.l!=null?d.l:d.low),
+      c: parseFloat(d.c!=null?d.c:d.close),
+    })).filter(c=>c.h>0&&c.l>0);
+    candleCache[key] = {candles, ts:Date.now()};
+    return candles;
+  }catch(e){ return null; }
+}
+
+// ── 壁アタック集計（実体か髭かを分けてカウント）──
+function analyzeWallAttacks(candles, lo, hi){
+  const hiThresh = hi*(1-ATTACK_TOUCH_PCT/100);
+  const loThresh = lo*(1+ATTACK_TOUCH_PCT/100);
+  let hiWick=0, hiBody=0, loWick=0, loBody=0;
+  for(const c of candles){
+    if(c.h >= hiThresh){ if(c.c > hi) hiBody++; else hiWick++; }
+    if(c.l <= loThresh){ if(c.c < lo) loBody++; else loWick++; }
+  }
+  return {hiTotal:hiWick+hiBody, hiWick, hiBody, loTotal:loWick+loBody, loWick, loBody};
+}
+
+// ── ローソク足ミニチャート（SVG）── 実体=太い箱／髭=細い線。アタック箇所に●を付ける
+function svgCandleStrip(candles, lo, hi){
+  if(!candles || candles.length===0) return '<div class="detail-loading">データなし</div>';
+  const step=10, bodyW=6, height=132, padTop=16, padBot=16;
+  const w = candles.length*step + 8;
+  const highs=candles.map(c=>c.h), lows=candles.map(c=>c.l);
+  const priceMax = Math.max(Math.max(...highs), hi)*1.004;
+  const priceMin = Math.min(Math.min(...lows), lo)*0.996;
+  const range = (priceMax-priceMin)||1;
+  const y = p => padTop + (height-padTop-padBot) * (1-(p-priceMin)/range);
+  const hiThresh = hi*(1-ATTACK_TOUCH_PCT/100);
+  const loThresh = lo*(1+ATTACK_TOUCH_PCT/100);
+
+  let bodies="", wicks="", markers="";
+  candles.forEach((c,i)=>{
+    const x = 4 + i*step + step/2;
+    const up = c.c >= c.o;
+    const color = up ? "#3ecb78" : "#e8504a";
+    wicks += `<line x1="${x}" y1="${y(c.h)}" x2="${x}" y2="${y(c.l)}" stroke="${color}" stroke-width="1.2"/>`;
+    const yTop=y(Math.max(c.o,c.c)), yBot=y(Math.min(c.o,c.c));
+    const bh=Math.max(1.2, yBot-yTop);
+    bodies += `<rect x="${x-bodyW/2}" y="${yTop}" width="${bodyW}" height="${bh}" fill="${color}" rx="1"/>`;
+    // 壁アタックのマーカー：実体突破=塗り／髭のみ=中抜き
+    if(c.h >= hiThresh){
+      const filled = c.c > hi;
+      markers += `<circle cx="${x}" cy="${y(c.h)-6}" r="3" fill="${filled?'#e8504a':'none'}" stroke="#e8504a" stroke-width="1.4"/>`;
+    }
+    if(c.l <= loThresh){
+      const filled = c.c < lo;
+      markers += `<circle cx="${x}" cy="${y(c.l)+6}" r="3" fill="${filled?'#3ecb78':'none'}" stroke="#3ecb78" stroke-width="1.4"/>`;
+    }
+  });
+  const hiLine = `<line x1="0" y1="${y(hi)}" x2="${w}" y2="${y(hi)}" stroke="#e8504a" stroke-width="1" stroke-dasharray="3,3" opacity=".6"/>`;
+  const loLine = `<line x1="0" y1="${y(lo)}" x2="${w}" y2="${y(lo)}" stroke="#3ecb78" stroke-width="1" stroke-dasharray="3,3" opacity=".6"/>`;
+  return `<svg width="${w}" height="${height}" viewBox="0 0 ${w} ${height}" style="display:block">${hiLine}${loLine}${wicks}${bodies}${markers}</svg>`;
+}
+
+// ── 詳細パネルの開閉 ──
+async function toggleDetail(id){
+  detailOpen[id] = !detailOpen[id];
+  if(detailOpen[id] && !detailTf[id]) detailTf[id]="4h";
+  render();
+  if(detailOpen[id]){
+    const w = watches.find(x=>x.id===id);
+    if(w) await loadDetailCandles(w);
+  }
+}
+async function setDetailTf(id, tf){
+  detailTf[id]=tf;
+  const w = watches.find(x=>x.id===id);
+  render();
+  if(w) await loadDetailCandles(w);
+}
+async function loadDetailCandles(w){
+  detailLoading[w.id]=true; render();
+  await fetchCandles(w.inst, detailTf[w.id]||"4h", CANDLE_COUNT);
+  detailLoading[w.id]=false; render();
+}
+
+// ── ティッカー取得 ──
+let lastFetchTime = 0;
+async function fetchAllTickers(){
+  if (Date.now()-lastFetchTime<5000 && Object.keys(tickerCache).length>0) return;
+  try{
+    const res=await fetch(TICKER_API);
+    const json=await res.json();
+    const data=(json.result&&json.result.data)||json.data||[];
+    data.forEach(t=>{
+      const key=t.instrument_name||t.i;
+      if(key){t.last=t.last||t.a;t.change=t.change||t.c;t.high=t.high||t.h;t.low=t.low||t.l;tickerCache[key]=t}
+    });
+    lastFetchTime=Date.now();
+  }catch(e){}
+}
+
+// ── プリセット追加 ──
+async function addPreset(sym){
+  const btn=document.getElementById("pre-"+sym);
+  if(btn){btn.classList.add("loading");btn.textContent=sym+"…"}
+  if(watches.find(w=>w.sym===sym)){if(btn){btn.textContent="✓ "+sym;btn.classList.remove("loading")}return}
+  await fetchAllTickers();
+  const preset=PRESET_COINS.find(p=>p.sym===sym);
+  let ticker=null,instName=null;
+  for(const inst of preset.insts){if(tickerCache[inst]){ticker=tickerCache[inst];instName=inst;break}}
+  if(!ticker){if(btn){btn.textContent="✗ "+sym;btn.classList.remove("loading")}return}
+  const lo=parseFloat(ticker.low||0);
+  const hi=parseFloat(ticker.high||0);
+  const last=parseFloat(ticker.last||0);
+  const change=parseFloat(ticker.change||0)*100;
+  const useLo=(lo&&hi&&lo<hi)?lo:last*0.985;
+  const useHi=(lo&&hi&&lo<hi)?hi:last*1.015;
+  watches.push({id:Date.now(),sym,inst:instName,lo:useLo,hi:useHi,price:last,change,_state:"safe",nextR:null,nextS:null});
+  save();render();
+  // レベル取得（非同期）
+  fetchLevels(instName).then(lvl=>{
+    const w=watches.find(x=>x.inst===instName);
+    if(w&&lvl){w.nextR=getNextResistance(lvl,last);w.nextS=getNextSupport(lvl,last);save();render()}
+  });
+  if(btn){btn.textContent="✓ "+sym;btn.classList.remove("loading")}
+}
+
+// ── 手動追加 ──
+function addWatch(){
+  let sym=document.getElementById("in-sym").value.trim().toUpperCase();
+  let lo=parseFloat(document.getElementById("in-lo").value);
+  let hi=parseFloat(document.getElementById("in-hi").value);
+  if(!sym){alert("銘柄を入力してください");return}
+  if(isNaN(lo)||isNaN(hi)){alert("上限・下限を入力してください");return}
+  if(lo>=hi){alert("下限は上限より小さくしてください");return}
+  const tryInsts=[sym+"_USDT",sym+"USD",sym+"_USD",sym+"USDT",sym+"USDPERP"];
+  let inst=tryInsts[0];
+  for(const t of tryInsts){if(tickerCache[t]){inst=t;break}}
+  watches.push({id:Date.now(),sym,inst,lo,hi,price:null,change:0,_state:"safe",nextR:null,nextS:null});
+  save();
+  document.getElementById("in-sym").value="";
+  document.getElementById("in-lo").value="";
+  document.getElementById("in-hi").value="";
+  render();poll();
+  fetchLevels(inst).then(lvl=>{
+    const w=watches.find(x=>x.inst===inst);
+    if(w&&lvl&&w.price){w.nextR=getNextResistance(lvl,w.price);w.nextS=getNextSupport(lvl,w.price);save();render()}
+  });
+}
+function delWatch(id){watches=watches.filter(w=>w.id!==id);delete lastAlertState[id];save();render()}
+
+// ── 価格更新 ──
+async function poll(){
+  if(watches.length===0){setFeed("監視なし",false);return}
+  try{
+    await fetchAllTickers();
+    for(const w of watches){
+      const t=tickerCache[w.inst];
+      if(t){
+        const last=parseFloat(t.last||0);
+        const chg=parseFloat(t.change||0)*100;
+        if(last>0){w.price=last;w.change=chg;checkAlert(w)}
+      }
+    }
+    save();render();setFeed("ライブ",true);
+    // 開いている詳細パネルのローソク足も、キャッシュが古ければ静かに更新
+    for(const w of watches){
+      if(detailOpen[w.id]) maybeRefreshDetail(w);
+    }
+  }catch(e){setFeed("接続エラー",false)}
+}
+async function maybeRefreshDetail(w){
+  const tf = detailTf[w.id]||"4h";
+  const key = w.inst+"|"+tf;
+  const cached = candleCache[key];
+  if(cached && Date.now()-cached.ts < 300000) return;   // まだ新しいのでスキップ
+  await loadDetailCandles(w);
+}
+function setFeed(txt,live){const f=document.getElementById("feed");f.textContent=live?"● "+txt:txt;f.className=live?"live":""}
+
+// ── アラート判定（レンジ抜け・リテスト対応）──
+function checkAlert(w){
+  if(w.price==null)return;
+  const p=w.price;
+  const prevBroke=w._broke;
+  // ブレイク方向を記憶（枠外に出たら記録）
+  if(p>w.hi*1.002) w._broke="up";
+  else if(p<w.lo*0.998) w._broke="down";
+  // 新規ブレイク（方向が変わった/新たに発生した）ならリテスト回数をリセット
+  if(w._broke && w._broke!==prevBroke){ w._retestCount=0; w._inRetestZone=false; }
+
+  const distLoPct=(p-w.lo)/w.lo*100;
+  const distHiPct=(w.hi-p)/w.hi*100;
+  // リテスト圏：ブレイク後、旧境界の±RETEST_PCT以内へ戻ってきた
+  const retestUp   = w._broke==="up"   && Math.abs(p-w.hi)/w.hi*100 <= RETEST_PCT;
+  const retestDown = w._broke==="down" && Math.abs(p-w.lo)/w.lo*100 <= RETEST_PCT;
+  // 圏外→圏内に入った瞬間だけカウント（居座り中や往復では増えない）
+  const inRetestZone = retestUp || retestDown;
+  if(inRetestZone && !w._inRetestZone){ w._retestCount=(w._retestCount||0)+1; }
+  w._inRetestZone = inRetestZone;
+
+  let state="safe";
+  if(p>w.hi*1.002) state="breakout-up";
+  else if(p<w.lo*0.998) state="breakout-down";
+  else if(retestUp) state="retest-up";
+  else if(retestDown) state="retest-down";
+  else if(p<=w.lo) state="hit-lo";
+  else if(p>=w.hi) state="hit-hi";
+  else if(distLoPct<=NEAR_PCT) state="near-lo";
+  else if(distHiPct<=NEAR_PCT) state="near-hi";
+
+  // ブレイク失敗（境界からFAIL_PCT逆行してレンジ内へ戻ったら記憶リセット）
+  if(w._broke==="up"   && p < w.hi*(1-FAIL_PCT/100)){ w._broke=null; w._retestCount=0; w._inRetestZone=false; }
+  if(w._broke==="down" && p > w.lo*(1+FAIL_PCT/100)){ w._broke=null; w._retestCount=0; w._inRetestZone=false; }
+
+  // ブレイクアウト時にレベル更新
+  if((state==="breakout-up"||state==="breakout-down") && lastAlertState[w.id]!==state){
+    fetchLevels(w.inst).then(lvl=>{
+      if(lvl){w.nextR=getNextResistance(lvl,w.price);w.nextS=getNextSupport(lvl,w.price);save();render()}
+    });
+  }
+  if(state!=="safe"&&lastAlertState[w.id]!==state) fireAlert(w,state);
+  lastAlertState[w.id]=state;
+  w._state=state;
+}
+
+function fireAlert(w,state){
+  let msg="";
+  if(state==="hit-lo") msg=w.sym+" が下限に到達！";
+  else if(state==="hit-hi") msg=w.sym+" が上限に到達！";
+  else if(state==="near-lo") msg=w.sym+" 下限に接近中";
+  else if(state==="near-hi") msg=w.sym+" 上限に接近中";
+  else if(state==="breakout-up") msg="🚀 "+w.sym+" レンジ上抜け！次の壁: $"+(w.nextR?fmt(w.nextR):"計算中");
+  else if(state==="breakout-down") msg="📉 "+w.sym+" レンジ下抜け！サポート: $"+(w.nextS?fmt(w.nextS):"計算中");
+  else if(state==="retest-up") msg="⭐ "+w.sym+" 旧レジ $"+fmt(w.hi)+" をリテスト中 "+(w._retestCount||1)+"回目（保てば継続）";
+  else if(state==="retest-down") msg="⭐ "+w.sym+" 旧サポ $"+fmt(w.lo)+" をリテスト中 "+(w._retestCount||1)+"回目（戻せば継続）";
+  if(typeof Notification!=="undefined"&&Notification.permission==="granted") new Notification("レンジ監視",{body:msg});
+  if(soundOn) beep(state.startsWith("breakout")?1100:state.startsWith("retest")?990:state.startsWith("hit")?880:560);
+  showToast(msg);
+  addLog(msg);
+  speak(w, state);
+}
+
+// ── トースト：鳴った瞬間に画面上部へ「何が鳴ったか」を表示（6秒で消える）──
+function showToast(msg){
+  const box=document.getElementById("toastBox");
+  const el=document.createElement("div");
+  el.className="toast";
+  el.innerHTML=msg+`<span class="t-time">${new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})}</span>`;
+  box.appendChild(el);
+  while(box.children.length>3) box.removeChild(box.firstChild);   // 最大3枚
+  setTimeout(()=>{ el.classList.add("out"); setTimeout(()=>el.remove(),450); }, 6000);
+}
+
+// ── アラート履歴（localStorageに最大50件保存、開き直しても残る）──
+let alertLog=[];
+let logUnread=0;
+let logVisible=false;
+function loadLog(){
+  try{ alertLog=JSON.parse(localStorage.getItem("range_alerts_log")||"[]"); }catch(e){ alertLog=[]; }
+  renderLog();
+}
+function saveLog(){
+  try{ localStorage.setItem("range_alerts_log", JSON.stringify(alertLog.slice(0,50))); }catch(e){}
+}
+function addLog(msg){
+  alertLog.unshift({t:Date.now(), msg});
+  alertLog=alertLog.slice(0,50);
+  saveLog();
+  if(!logVisible){ logUnread++; }
+  renderLog();
+}
+function renderLog(){
+  const body=document.getElementById("logBody");
+  const badge=document.getElementById("logBadge");
+  if(logUnread>0){ badge.style.display="inline-block"; badge.textContent=logUnread; }
+  else badge.style.display="none";
+  if(alertLog.length===0){ body.innerHTML='<div class="log-empty">まだアラートはありません</div>'; return; }
+  const now=Date.now();
+  body.innerHTML=alertLog.map(e=>{
+    const d=new Date(e.t);
+    const time=(now-e.t<86400000)
+      ? d.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})
+      : (d.getMonth()+1)+"/"+d.getDate()+" "+d.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});
+    const fresh=now-e.t<3600000?" fresh":"";
+    return `<div class="log-row${fresh}"><span class="log-time">${time}</span><span class="log-msg">${e.msg}</span></div>`;
+  }).join("");
+}
+function toggleLog(){
+  logVisible=!logVisible;
+  document.getElementById("logBody").classList.toggle("hidden",!logVisible);
+  document.getElementById("logArrow").textContent=logVisible?"▲":"▼";
+  if(logVisible){ logUnread=0; renderLog(); }
+}
+function clearLog(){ alertLog=[]; logUnread=0; saveLog(); renderLog(); }
+
+// ── 読み上げ：銘柄名とイベントを声で（画面を見てなくても分かる）──
+let voiceOn=false;
+function toggleVoice(){
+  voiceOn=!voiceOn;
+  const b=document.getElementById("voiceBtn");
+  b.textContent=voiceOn?"🗣 読み上げ ON":"🗣 読み上げ OFF";
+  b.classList.toggle("on",voiceOn);
+  if(voiceOn) speakText("読み上げをオンにしました");
+}
+function speak(w,state){
+  if(!voiceOn) return;
+  const ev={"hit-lo":"下限到達","hit-hi":"上限到達","near-lo":"下限接近","near-hi":"上限接近",
+            "breakout-up":"上抜け","breakout-down":"下抜け",
+            "retest-up":"旧レジスタンス、リテスト"+(w._retestCount||1)+"回目",
+            "retest-down":"旧サポート、リテスト"+(w._retestCount||1)+"回目"}[state]||state;
+  speakText(w.sym.split("").join(" ")+"、"+ev);   // "S O L、上限到達" と読ませる
+}
+function speakText(text){
+  try{
+    if(typeof speechSynthesis==="undefined") return;
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang="ja-JP"; u.rate=1.05;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+let audioCtx;
+function beep(freq){try{audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);o.frequency.value=freq;o.type="sine";g.gain.setValueAtTime(.18,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+.4);o.start();o.stop(audioCtx.currentTime+.4)}catch(e){}}
+
+// ── 描画 ──
+function render(){
+  const list=document.getElementById("list");
+  if(watches.length===0){list.innerHTML='<div class="empty">監視中の銘柄はありません。<br>プリセットまたはフォームから追加してください。</div>';return}
+  list.innerHTML=watches.map(w=>{
+    const span=w.hi-w.lo;
+    let pos=50,posTxt="—",priceTxt="取得中…";
+    let markerCls="mid",cardCls="",stateCls="safe",stateTxt="レンジ内";
+    let barLo=w.lo, barHi=w.hi, starPos=null, starActive=false;   // ズームバー / ★位置
+    if(w.price!=null){
+      const s=w._state||"safe";
+      priceTxt="$"+fmt(w.price);
+      // ブレイク方向が記録されていれば、旧境界の周辺にバーをズーム
+      if(w._broke==="up"){ barLo=w.hi*0.97; barHi=Math.max(w.price,w.hi)*1.02; starPos=(w.hi-barLo)/((barHi-barLo)||1)*100; }
+      else if(w._broke==="down"){ barLo=Math.min(w.price,w.lo)*0.98; barHi=w.lo*1.03; starPos=(w.lo-barLo)/((barHi-barLo)||1)*100; }
+      pos=Math.max(0,Math.min(100,(w.price-barLo)/((barHi-barLo)||1)*100));
+      posTxt = w._broke ? ("$"+fmt(w.price)) : (Math.max(0,Math.min(100,(w.price-w.lo)/(span||1)*100)).toFixed(0)+"%");
+      if(s==="hit-lo"){cardCls="alert-low";markerCls="lo";stateCls="hit-lo";stateTxt="▼ 下限到達"}
+      else if(s==="hit-hi"){cardCls="alert-high";markerCls="hi";stateCls="hit-hi";stateTxt="▲ 上限到達"}
+      else if(s==="near-lo"){cardCls="near";stateCls="near";stateTxt="下限に接近"}
+      else if(s==="near-hi"){cardCls="near";stateCls="near";stateTxt="上限に接近"}
+      else if(s==="breakout-up"){cardCls="breakout-up";markerCls="out-hi";stateCls="breakout-up";stateTxt="🚀 レンジ上抜け"}
+      else if(s==="breakout-down"){cardCls="breakout-down";markerCls="out-lo";stateCls="breakout-down";stateTxt="📉 レンジ下抜け"}
+      else if(s==="retest-up"){cardCls="retest";markerCls="hi";stateCls="retest";stateTxt="⭐ 旧レジをリテスト中 "+(w._retestCount||1)+"回目";starActive=true}
+      else if(s==="retest-down"){cardCls="retest";markerCls="lo";stateCls="retest";stateTxt="⭐ 旧サポをリテスト中 "+(w._retestCount||1)+"回目";starActive=true}
+    }
+    const chCls=w.change>=0?"up":"down";
+    const chTxt=(w.change>=0?"+":"")+w.change.toFixed(2)+"%";
+    // 次の目標行
+    let targetHtml="";
+    if(w._state==="breakout-up"&&w.nextR){
+      const dist=((w.nextR-w.price)/w.price*100).toFixed(1);
+      targetHtml=`<div class="target-row up"><span class="tgt-label">次のレジスタンス（+${dist}%）</span><span class="tgt-price">$${fmt(w.nextR)}</span></div>`;
+    } else if(w._state==="breakout-down"&&w.nextS){
+      const dist=((w.price-w.nextS)/w.price*100).toFixed(1);
+      targetHtml=`<div class="target-row down"><span class="tgt-label">次のサポート（-${dist}%）</span><span class="tgt-price">$${fmt(w.nextS)}</span></div>`;
+    } else if(w._state==="breakout-up"&&!w.nextR){
+      targetHtml=`<div class="target-row up"><span class="tgt-label">レジスタンス</span><span class="tgt-price">取得中…</span></div>`;
+    } else if(w._state==="breakout-down"&&!w.nextS){
+      targetHtml=`<div class="target-row down"><span class="tgt-label">サポート</span><span class="tgt-price">取得中…</span></div>`;
+    }
+    // リテスト行（ブレイク方向が記録されている間）
+    let retestHtml="";
+    if(w._broke==="up"&&w.price!=null){
+      const d=(w.price-w.hi)/w.hi*100;
+      const cnt=w._retestCount||0;
+      const cntBadge=cnt>0?`<span class="retest-count-badge">${cnt}回目</span>`:"";
+      retestHtml=`<div class="retest-row"><span class="tgt-label">⭐ リテスト位置（旧レジ）${cntBadge}</span><span class="tgt-price">$${fmt(w.hi)} (${d>=0?"+":""}${d.toFixed(1)}%)</span></div>`;
+    } else if(w._broke==="down"&&w.price!=null){
+      const d=(w.price-w.lo)/w.lo*100;
+      const cnt=w._retestCount||0;
+      const cntBadge=cnt>0?`<span class="retest-count-badge">${cnt}回目</span>`:"";
+      retestHtml=`<div class="retest-row"><span class="tgt-label">⭐ リテスト位置（旧サポ）${cntBadge}</span><span class="tgt-price">$${fmt(w.lo)} (${d>=0?"+":""}${d.toFixed(1)}%)</span></div>`;
+    }
+    // ズーム時のラベル（★は旧境界）
+    const loLabel = w._broke==="up" ? `⭐$${fmt(w.hi)}` : w._broke==="down" ? `$${fmt(w.nextS||barLo)}` : `$${fmt(w.lo)}`;
+    const hiLabel = w._broke==="up" ? `$${fmt(w.nextR||barHi)}` : w._broke==="down" ? `⭐$${fmt(w.lo)}` : `$${fmt(w.hi)}`;
+    const starEl = starPos!=null ? `<span class="marker-star ${starActive?"active":""}" style="left:${starPos}%">★</span>` : "";
+    return `
+    <div class="watch ${cardCls}">
+      <div class="w-head"><span class="w-sym">${w.sym}</span><span class="w-price">${priceTxt}</span></div>
+      <div class="w-meta">
+        <span>レンジ幅 ${span>0?(span/w.lo*100).toFixed(1):"—"}%</span>
+        <span class="w-change ${chCls}">24h ${chTxt}</span>
+      </div>
+      <div class="bar-wrap">
+        <div class="bar"><div class="bar-fill"></div>${starEl}<div class="marker ${markerCls}" style="left:${pos}%"></div></div>
+        <div class="bar-labels">
+          <span class="lo-l">${loLabel}</span>
+          <span class="pos-l">${posTxt}</span>
+          <span class="hi-l">${hiLabel}</span>
+        </div>
+      </div>
+      ${retestHtml}
+      ${targetHtml}
+      <button class="btn-detail ${detailOpen[w.id]?'on':''}" onclick="toggleDetail(${w.id})">${detailOpen[w.id]?'▲ 壁アタック分析を閉じる':'📊 壁アタック分析（実体/髭・回数）'}</button>
+      ${detailOpen[w.id] ? renderDetailPanel(w) : ''}
+      <div class="w-foot">
+        <span class="w-state ${stateCls}">${stateTxt}</span>
+        <button class="btn-del" onclick="delWatch(${w.id})">削除</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ── 壁アタック詳細パネルの中身 ──
+function renderDetailPanel(w){
+  const tf = detailTf[w.id]||"4h";
+  const key = w.inst+"|"+tf;
+  const cached = candleCache[key];
+  if(detailLoading[w.id] || !cached){
+    return `<div class="detail-panel">
+      <div class="tf-select">${["1h","4h","1D"].map(t=>`<button class="tf-btn ${t===tf?'on':''}" onclick="setDetailTf(${w.id},'${t}')">${t}</button>`).join("")}</div>
+      <div class="detail-loading">読み込み中…</div>
+    </div>`;
+  }
+  const candles = cached.candles.slice(-CANDLE_COUNT);
+  const atk = analyzeWallAttacks(candles, w.lo, w.hi);
+  const svg = svgCandleStrip(candles, w.lo, w.hi);
+  return `<div class="detail-panel">
+    <div class="tf-select">${["1h","4h","1D"].map(t=>`<button class="tf-btn ${t===tf?'on':''}" onclick="setDetailTf(${w.id},'${t}')">${t}</button>`).join("")}</div>
+    <div class="attack-grid">
+      <div class="attack-box hi">
+        <div class="ab-label">上限アタック（直近${candles.length}本）</div>
+        <div class="ab-total">${atk.hiTotal}回</div>
+        <div class="ab-split">髭のみ反発 <span class="wick-n">${atk.hiWick}</span> ／ 実体突破 <span class="body-n">${atk.hiBody}</span></div>
+      </div>
+      <div class="attack-box lo">
+        <div class="ab-label">下限アタック（直近${candles.length}本）</div>
+        <div class="ab-total">${atk.loTotal}回</div>
+        <div class="ab-split">髭のみ反発 <span class="wick-n">${atk.loWick}</span> ／ 実体割れ <span class="body-n">${atk.loBody}</span></div>
+      </div>
+    </div>
+    <div class="candle-wrap">${svg}</div>
+    <div class="candle-legend">
+      <span><span class="leg-swatch" style="background:#3ecb78"></span>陽線の実体</span>
+      <span><span class="leg-swatch" style="background:#e8504a"></span>陰線の実体</span>
+      <span><span class="leg-wick"></span>髭（高値・安値）</span>
+      <span>●塗り=実体で突破／○中抜き=髭のみで反発</span>
+    </div>
+  </div>`;
+}
+
+function fmt(n){if(n==null)return"—";if(n>=1000)return n.toLocaleString("en-US",{maximumFractionDigits:1});if(n>=1)return n.toFixed(3);if(n>=0.001)return n.toFixed(5);return n.toPrecision(4)}
+
+function reqNotify(){
+  if(typeof Notification==="undefined"||!("Notification"in window)){alert("この環境では通知は非対応です。ブラウザで直接開くと使えます。");return}
+  Notification.requestPermission().then(p=>{if(p==="granted"){document.getElementById("notifyBtn").textContent="🔔 通知 ON";document.getElementById("notifyBtn").classList.add("on")}});
+}
+function toggleSound(){soundOn=!soundOn;const b=document.getElementById("soundBtn");b.textContent=soundOn?"🔊 音 ON":"🔇 音 OFF";b.classList.toggle("on",soundOn);if(soundOn)beep(660)}
+function tick(){document.getElementById("clock").textContent=new Date().toLocaleTimeString("ja-JP")}
+
+// ── スキャナー（トレンド + 日足S/R接触の自動抽出）──
+const SCAN_UNIVERSE = 36;    // 出来高上位いくつを走査するか
+const SR_TOUCH_PCT = 2.0;    // 日足S/Rにこの%以内なら「接触」扱い
+const DAILY_MIN_BARS = 25;   // 日足がこれ未満なら判定しない
+const MIN_RR = 1.5;          // これ未満の予測RRは方向/RRを付けない
+const STOP_BUF = 0.015, BREAK_BUF = 0.003;   // レベル余白 / ブレイクトリガー余白
+let dailyCache = {};         // inst -> {a, ts}
+let scanResults = {};        // inst -> result（追加時に参照）
+let scanning = false;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function sma(arr, n){ if(arr.length<n) return null; let s=0; for(let i=arr.length-n;i<arr.length;i++) s+=arr[i]; return s/n; }
+
+// ── らせん構造：分散比 VR(k)=Var(k日)/(k×Var(1日)) → <1で回転（戻る）、>1で前進（続く）──
+function varianceRatio(rets,k){
+  const n=rets.length;
+  if(n<k*3) return null;
+  const mean=rets.reduce((a,b)=>a+b,0)/n;
+  let v1=0; for(const r of rets) v1+=(r-mean)*(r-mean); v1/=(n-1);
+  if(v1<=0) return null;
+  const kr=[];
+  for(let i=0;i+k<=n;i++){ let s=0; for(let j=0;j<k;j++) s+=rets[i+j]; kr.push(s); }
+  if(kr.length<10) return null;
+  const km=kr.reduce((a,b)=>a+b,0)/kr.length;
+  let vk=0; for(const r of kr) vk+=(r-km)*(r-km); vk/=(kr.length-1);
+  return vk/(k*v1);
+}
+function structureScore(closes){
+  if(closes.length<60) return null;
+  const rets=[];
+  for(let i=1;i<closes.length;i++){ if(closes[i-1]>0&&closes[i]>0) rets.push(Math.log(closes[i]/closes[i-1])); }
+  const vrs=[2,4,8,16].map(k=>varianceRatio(rets,k)).filter(v=>v!=null&&v>0);
+  if(vrs.length<3) return null;
+  return Math.exp(vrs.reduce((a,v)=>a+Math.log(v),0)/vrs.length);   // ≈1ランダム / >1前進 / <1回転
+}
+// 波動の強さ：直近20日の平均日次振幅（(高値-安値)/終値 %）＝1往復あたりの取れ幅
+function waveStrength(highs,lows,closes,n=20){
+  const m=Math.min(n,closes.length);
+  if(m<8) return null;
+  let s=0,cnt=0;
+  for(let i=closes.length-m;i<closes.length;i++){
+    if(closes[i]>0){ s+=(highs[i]-lows[i])/closes[i]*100; cnt++; }
+  }
+  return cnt?s/cnt:null;
+}
+
+// 出来高上位のUSDT建てをユニバースに（プリセットは必ず含める）
+function pickUniverse(){
+  const rows = Object.values(tickerCache).map(t=>({
+    inst: t.instrument_name||t.i,
+    vol: parseFloat(t.vv||t.v||0),
+    last: parseFloat(t.last||t.a||0)
+  })).filter(r=>r.inst && /_USDT$/.test(r.inst) && r.last>0 && r.vol>0);
+  rows.sort((a,b)=>b.vol-a.vol);
+  const set = new Set();
+  // プリセットのUSDT建てを優先で入れる
+  PRESET_COINS.forEach(p=>{ const u=p.insts.find(i=>/_USDT$/.test(i)); if(u&&tickerCache[u]) set.add(u); });
+  for(const r of rows){ if(set.size>=SCAN_UNIVERSE) break; set.add(r.inst); }
+  return [...set];
+}
+
+// 日足を取得して トレンド / 最寄りS・R / モメンタム を算出
+async function analyzeDaily(inst){
+  if(dailyCache[inst] && Date.now()-dailyCache[inst].ts < 1800000) return dailyCache[inst].a;
+  try{
+    const res = await fetch(KLINE_API+"?instrument_name="+inst+"&timeframe=1D&count=200");
+    const json = await res.json();
+    let data = (json.result&&json.result.data)||json.data||[];
+    if(data.length < DAILY_MIN_BARS) return null;
+    data.sort((a,b)=>new Date(a.timestamp||a.t)-new Date(b.timestamp||b.t));
+    const closes = data.map(d=>parseFloat(d.close||d.c));
+    const highs  = data.map(d=>parseFloat(d.high||d.h));
+    const lows   = data.map(d=>parseFloat(d.low||d.l));
+    const price = closes[closes.length-1];
+    if(!(price>0)) return null;
+    const s20=sma(closes,20), s50=sma(closes,50);
+    // トレンド判定
+    let trend="range";
+    if(s20&&s50){ if(price>s20&&s20>s50) trend="up"; else if(price<s20&&s20<s50) trend="down"; }
+    else if(s20){ if(price>s20*1.03) trend="up"; else if(price<s20*0.97) trend="down"; }
+    // モメンタム（直近10本の変化率）
+    const mom = closes.length>=11 ? (price-closes[closes.length-11])/closes[closes.length-11]*100 : 0;
+    // 日足スイングS/R
+    const resL = [...new Set(findSwingHighs(highs,3))].filter(x=>x>0).sort((a,b)=>a-b);
+    const supL = [...new Set(findSwingLows(lows,3))].filter(x=>x>0).sort((a,b)=>a-b);
+    const nearR = resL.filter(r=>r>=price*0.999).sort((a,b)=>a-b)[0] || null;   // 直上のレジ
+    const nearS = supL.filter(s=>s<=price*1.001).sort((a,b)=>b-a)[0] || null;   // 直下のサポ
+    const resAbove = resL.filter(r=>r>price*0.999).sort((a,b)=>a-b);            // 上のレジ（昇順）
+    const supBelow = supL.filter(s=>s<price*1.001).sort((a,b)=>b-a);            // 下のサポ（降順）
+    const rangeLo = supL.filter(s=>s<price).sort((a,b)=>b-a)[0] || price*0.97;   // 監視レンジ下限候補
+    const rangeHi = resL.filter(r=>r>price).sort((a,b)=>a-b)[0] || price*1.03;   // 監視レンジ上限候補
+    const distR = nearR ? (nearR-price)/price*100 : null;
+    const distS = nearS ? (price-nearS)/price*100 : null;
+    const sScore = structureScore(closes);                // <1 回転 / >1 前進
+    const wave = waveStrength(highs,lows,closes);         // 平均日次振幅%
+    const a = {price,trend,mom,nearR,nearS,resAbove,supBelow,distR,distS,rangeLo,rangeHi,sScore,wave};
+    dailyCache[inst] = {a, ts:Date.now()};
+    return a;
+  }catch(e){ return null; }
+}
+
+// セットアップ判定（方向 / IN・SL・TP / 予測RR）— sr_scanと同一ロジック
+function buildSetup(a){
+  const price=a.price, trend=a.trend;
+  const R1=a.resAbove[0]||null, R2=a.resAbove[1]||null;
+  const S1=a.supBelow[0]||null, S2=a.supBelow[1]||null;
+  const touchR=a.distR!=null && a.distR<=SR_TOUCH_PCT;
+  const touchS=a.distS!=null && a.distS<=SR_TOUCH_PCT;
+  let setup,direction,level,levelName,entry,stop,target;
+  if(touchR&&trend==="up"&&R1){                       // ① レジ×↑ → ブレイクロング
+    setup="ブレイク狙い";direction="LONG";level=R1;levelName="レジ";
+    entry=R1*(1+BREAK_BUF);
+    stop=(S1&&S1<entry)?S1:R1*(1-STOP_BUF*2);
+    const rng=(S1&&S1<R1)?(R1-S1):R1*0.05;
+    target=R2?R2:entry+rng;
+  }else if(touchR&&R1){                               // ② レジ×レンジ/↓ → 反落ショート
+    setup="反落狙い";direction="SHORT";level=R1;levelName="レジ";
+    entry=Math.min(price,R1);
+    stop=R1*(1+STOP_BUF);
+    target=S1?S1:entry*(1-Math.max(a.distR||4,4)/100-0.03);
+  }else if(touchS&&trend==="down"&&S1){               // ③ サポ×↓ → 割れショート
+    setup="割れ狙い";direction="SHORT";level=S1;levelName="サポ";
+    entry=S1*(1-BREAK_BUF);
+    stop=(R1&&R1>entry)?R1:S1*(1+STOP_BUF*2);
+    const rng=(R1&&R1>S1)?(R1-S1):S1*0.05;
+    target=S2?S2:entry-rng;
+  }else if(touchS&&S1){                               // ④ サポ×レンジ/↑ → 反発ロング
+    setup="反発狙い";direction="LONG";level=S1;levelName="サポ";
+    entry=Math.max(price,S1);
+    stop=S1*(1-STOP_BUF);
+    target=R1?R1:entry*(1+Math.max(a.distS||4,4)/100+0.03);
+  }else return null;
+  if(![entry,stop,target].every(v=>v&&v>0)) return null;
+  let risk,reward;
+  if(direction==="LONG"){risk=entry-stop;reward=target-entry;}
+  else{risk=stop-entry;reward=entry-target;}
+  if(risk<=0||reward<=0) return null;
+  const rr=reward/risk;
+  if(rr<MIN_RR) return null;
+  return {setup,direction,level,levelName,dist:levelName==="レジ"?a.distR:a.distS,entry,stop,target,rr};
+}
+
+// ── 回転力ランキング：回転しやすさ × 波動の取れ幅 でレンジ回転向き銘柄を順位付け ──
+async function runRotScan(){
+  if(scanning) return;
+  scanning = true;
+  const btn = document.getElementById("rotBtn");
+  btn.classList.add("on");
+  await fetchAllTickers();
+  const universe = pickUniverse();
+  if(universe.length===0){
+    document.getElementById("scanResults").innerHTML='<div class="scan-empty">ティッカー取得待ち。数秒後にもう一度。</div>';
+    btn.textContent="🌀 回転力ランキング"; btn.classList.remove("on"); scanning=false; return;
+  }
+  const found = [];
+  for(let i=0;i<universe.length;i++){
+    btn.textContent=`🌀 判定中… ${i+1}/${universe.length}`;
+    const inst = universe[i];
+    const a = await analyzeDaily(inst);
+    if(a && a.sScore!=null && a.wave!=null){
+      // 回転力: VR<1ほど強い → 0..100 に変換（VR0.4→100, VR1.0→0）
+      const rotPower = Math.max(0, Math.min(100, (1 - a.sScore) / 0.6 * 100));
+      // 波動の強さ: 平均日次振幅% → 0..100（8%で満点）
+      const wavePower = Math.max(0, Math.min(100, a.wave / 8 * 100));
+      // レンジ適性 = 回転力 × 波動（両方ないと点が付かない幾何平均）
+      const fitScore = Math.sqrt(Math.max(rotPower,1) * Math.max(wavePower,1));
+      const r = {inst, sym:inst.replace("_USDT",""), rotPower, wavePower, fitScore, ...a};
+      found.push(r); scanResults[inst]=r;   // ＋監視 で使い回す
+    }
+    await sleep(110);
+  }
+  found.sort((x,y)=>y.fitScore-x.fitScore);
+  renderRotResults(found.slice(0,15));
+  btn.textContent="🌀 再ランキング"; btn.classList.remove("on"); scanning=false;
+}
+
+function renderRotResults(list){
+  const box = document.getElementById("scanResults");
+  if(list.length===0){ box.innerHTML='<div class="scan-empty">判定できる銘柄がありませんでした（日足データ不足）。</div>'; return; }
+  const head = `<div class="scan-title"><span>🌀 レンジ回転の適性ランキング</span><span>回転力 × 波動幅</span></div>
+    <div class="rot-note">回転力 = 行き過ぎたら戻る性質の強さ。波動 = 1日の平均振れ幅（＝1往復の取れ幅）。両方高い銘柄ほど、壁での逆張り・レンジ回転に向く。低い銘柄は順張り向き。</div>`;
+  box.innerHTML = head + list.map((r,i)=>{
+    let fitTag, fitCls;
+    if(r.rotPower>=45 && r.wavePower>=30){ fitTag="回転向き"; fitCls="good"; }
+    else if(r.rotPower<15){ fitTag="順張り向き"; fitCls="bad"; }
+    else { fitTag="中間"; fitCls="mid"; }
+    const already = watches.find(w=>w.inst===r.inst);
+    return `<div class="rot-card ${i===0?"top1":""}">
+      <span class="rot-rank">${i+1}</span>
+      <div class="rot-main">
+        <div class="rot-head">
+          <span class="rot-sym">${r.sym}</span>
+          <span class="rot-price">$${fmt(r.price)}</span>
+          <span class="rot-fit ${fitCls}">${fitTag}</span>
+        </div>
+        <div class="rbar-row">
+          <span class="rbar-label">回転力</span>
+          <div class="rbar-track"><div class="rbar-fill rot" style="width:${r.rotPower.toFixed(0)}%"></div></div>
+          <span class="rbar-val">${r.rotPower.toFixed(0)}</span>
+        </div>
+        <div class="rbar-row">
+          <span class="rbar-label">波動</span>
+          <div class="rbar-track"><div class="rbar-fill wave" style="width:${r.wavePower.toFixed(0)}%"></div></div>
+          <span class="rbar-val">${r.wave.toFixed(1)}%/日</span>
+        </div>
+      </div>
+      <button class="sc-add ${already?"done":""}" id="scadd-${r.inst}" onclick="addFromScan('${r.inst}')">${already?"✓ 監視中":"＋ 監視"}</button>
+    </div>`;
+  }).join("");
+}
+
+async function runScan(){
+  if(scanning) return;
+  scanning = true;
+  const btn = document.getElementById("scanBtn");
+  btn.classList.add("on");
+  await fetchAllTickers();
+  const universe = pickUniverse();
+  if(universe.length===0){
+    document.getElementById("scanResults").innerHTML='<div class="scan-empty">ティッカー取得待ち。数秒後にもう一度。</div>';
+    btn.textContent="🔍 トレンド / 日足S・R をスキャン"; btn.classList.remove("on"); scanning=false; return;
+  }
+  scanResults = {};
+  const found = [];
+  for(let i=0;i<universe.length;i++){
+    btn.textContent=`🔍 スキャン中… ${i+1}/${universe.length}`;
+    const inst = universe[i];
+    const a = await analyzeDaily(inst);
+    if(a){
+      const touchR = a.distR!=null && a.distR<=SR_TOUCH_PCT;
+      const touchS = a.distS!=null && a.distS<=SR_TOUCH_PCT;
+      const trending = a.trend!=="range";
+      if(touchR||touchS||trending){
+        const sym = inst.replace("_USDT","");
+        const setup = buildSetup(a);   // 方向 / IN・SL・TP / RR（条件未達ならnull）
+        const r = {inst,sym,touchR,touchS,trending,setup,...a};
+        found.push(r); scanResults[inst]=r;
+      }
+    }
+    await sleep(110);
+  }
+  // 並び順: 有効セットアップ(RR)を最優先→S/R接触→モメンタム
+  found.sort((x,y)=>{
+    const sx=(x.setup?2000+x.setup.rr*100:0)+((x.touchR||x.touchS)?1000:0)+Math.abs(x.mom);
+    const sy=(y.setup?2000+y.setup.rr*100:0)+((y.touchR||y.touchS)?1000:0)+Math.abs(y.mom);
+    return sy-sx;
+  });
+  renderScanResults(found.slice(0,15));
+  btn.textContent="🔍 再スキャン"; btn.classList.remove("on"); scanning=false;
+}
+
+function renderScanResults(list){
+  const box = document.getElementById("scanResults");
+  if(list.length===0){ box.innerHTML='<div class="scan-empty">条件に合う銘柄は見つかりませんでした。</div>'; return; }
+  const nSetup = list.filter(r=>r.setup).length;
+  const head = `<div class="scan-title"><span>候補 ${list.length} 件（方向/RR ${nSetup}件）</span><span>RR≥${MIN_RR} / 接触≤${SR_TOUCH_PCT}%</span></div>`;
+  box.innerHTML = head + list.map(r=>{
+    const s = r.setup;
+    const tags=[];
+    if(s) tags.push(`<span class="tag ${s.direction==="LONG"?"sup":"res"}">${s.setup}</span>`);
+    if(r.trend==="up")   tags.push('<span class="tag up">🔥↑</span>');
+    else if(r.trend==="down") tags.push('<span class="tag down">📉↓</span>');
+    if(r.sScore!=null){
+      if(r.sScore<=0.80) tags.push('<span class="tag" style="background:rgba(167,139,250,.14);color:#a78bfa">🌀⟳回転型</span>');
+      else if(r.sScore>=1.25) tags.push('<span class="tag" style="background:rgba(91,156,246,.14);color:#5b9cf6">🌀→前進型</span>');
+    }
+    if(r.wave!=null) tags.push(`<span class="tag">波動${r.wave.toFixed(1)}%/日</span>`);
+    if(r.touchR) tags.push(`<span class="tag res">レジ+${r.distR.toFixed(1)}%</span>`);
+    if(r.touchS) tags.push(`<span class="tag sup">サポ-${r.distS.toFixed(1)}%</span>`);
+    if(tags.length===0) tags.push(`<span class="tag">mom ${r.mom>=0?"+":""}${r.mom.toFixed(1)}%</span>`);
+    const dirBadge = s?`<span class="sc-dir ${s.direction==="LONG"?"long":"short"}">${s.direction}</span>`:"";
+    const rrBadge  = s?`<span class="sc-rr">RR ${s.rr.toFixed(1)}</span>`:"";
+    let lvlLine="";
+    if(s){
+      const slp=(s.stop-s.entry)/s.entry*100, tpp=(s.target-s.entry)/s.entry*100;
+      lvlLine=`<div class="sc-levels">IN ${fmt(s.entry)} / SL ${fmt(s.stop)} (${slp>=0?"+":""}${slp.toFixed(1)}%) / TP ${fmt(s.target)} (${tpp>=0?"+":""}${tpp.toFixed(1)}%)</div>`;
+    }
+    const already = watches.find(w=>w.inst===r.inst);
+    const setupCls = s?` has-setup ${s.direction==="LONG"?"long":"short"}`:"";
+    return `<div class="scan-card${setupCls}">
+      <div class="sc-main">
+        <div class="sc-top">${dirBadge}<span class="sc-sym">${r.sym}</span><span class="sc-price">$${fmt(r.price)}</span>${rrBadge}</div>
+        <div class="sc-tags">${tags.join("")}</div>
+        ${lvlLine}
+      </div>
+      <button class="sc-add ${already?"done":""}" id="scadd-${r.inst}" onclick="addFromScan('${r.inst}')">${already?"✓ 監視中":"＋ 監視"}</button>
+    </div>`;
+  }).join("");
+}
+
+// 候補から監視追加（レンジは日足のサポ〜レジ幅で自動セット）
+function addFromScan(inst){
+  const r = scanResults[inst];
+  if(!r) return;
+  if(watches.find(w=>w.inst===inst)) return;
+  const lo = (r.rangeLo && r.rangeLo<r.price) ? r.rangeLo : r.price*0.97;
+  const hi = (r.rangeHi && r.rangeHi>r.price) ? r.rangeHi : r.price*1.03;
+  const t = tickerCache[inst];
+  const change = t ? parseFloat(t.change||t.c||0)*100 : 0;
+  watches.push({id:Date.now(),sym:r.sym,inst,lo,hi,price:r.price,change,_state:"safe",nextR:null,nextS:null});
+  save(); render();
+  const b=document.getElementById("scadd-"+inst); if(b){b.textContent="✓ 監視中";b.classList.add("done")}
+  fetchLevels(inst).then(lvl=>{
+    const w=watches.find(x=>x.inst===inst);
+    if(w&&lvl){w.nextR=getNextResistance(lvl,w.price);w.nextS=getNextSupport(lvl,w.price);save();render()}
+  });
+}
+
+load();loadLog();renderPresets();render();poll();
+setInterval(poll,POLL_MS);setInterval(tick,1000);tick();
+if(typeof Notification!=="undefined"&&Notification.permission==="granted"){document.getElementById("notifyBtn").textContent="🔔 通知 ON";document.getElementById("notifyBtn").classList.add("on")}
+</script>
+</body>
+</html>
