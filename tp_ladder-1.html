@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TPラダー — 4h→日足→週足の壁マップ</title>
+<style>
+  :root{--bg:#0a0e14;--panel:#111722;--edge:#1c2533;--ink:#d4dce6;--dim:#5a6b80;--faint:#36424f;
+        --gold:#e8c84a;--green:#3ecb78;--red:#e8504a;--blue:#5b9cf6;--purple:#a78bfa}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;padding:16px 14px 60px;max-width:600px;margin:0 auto}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px}
+  h1{font-size:16px;font-weight:700}
+  h1 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:7px;vertical-align:middle;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .sub{font-size:10.5px;color:var(--dim);margin-bottom:12px;line-height:1.6}
+  .add-row{display:flex;gap:8px;margin-bottom:8px}
+  input{background:#070b11;border:1px solid var(--edge);border-radius:7px;color:var(--ink);font-size:14px;padding:10px 12px;outline:none;flex:1;min-width:0}
+  input:focus{border-color:#2f4666}
+  button{cursor:pointer;font-family:inherit;border:none;border-radius:7px;font-weight:700}
+  .btn-add{background:var(--gold);color:#1a1505;font-size:13px;padding:10px 18px}
+  .presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+  .chip{background:var(--panel);border:1px solid var(--edge);color:var(--dim);font-size:11px;padding:6px 11px;border-radius:14px}
+  .chip:active{color:var(--gold)}
+  /* 銘柄カード */
+  .coin{background:var(--panel);border:1px solid var(--edge);border-radius:11px;padding:13px 14px;margin-bottom:13px}
+  .c-head{display:flex;align-items:baseline;gap:9px;margin-bottom:10px}
+  .c-sym{font-size:16px;font-weight:800}
+  .c-price{font-family:ui-monospace,monospace;font-size:13px;color:var(--ink)}
+  .c-del{margin-left:auto;background:none;border:none;color:var(--faint);font-size:14px;padding:2px 6px}
+  .c-loading{font-size:11px;color:var(--faint);padding:8px 0}
+  /* ラダー */
+  .rung{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid rgba(28,37,51,.5)}
+  .rung:last-child{border-bottom:none}
+  .rung.passed{opacity:.38}
+  .rung.tp1{background:linear-gradient(90deg,rgba(232,200,74,.08),transparent);border-radius:6px;padding-left:6px;margin-left:-6px}
+  .r-tag{font-size:9px;font-weight:800;padding:2px 7px;border-radius:4px;flex-shrink:0;width:38px;text-align:center}
+  .r-tag.h4{background:rgba(91,156,246,.15);color:var(--blue)}
+  .r-tag.d1{background:rgba(232,200,74,.15);color:var(--gold)}
+  .r-tag.w1{background:rgba(167,139,250,.18);color:var(--purple)}
+  .r-price{font-family:ui-monospace,monospace;font-size:13.5px;font-weight:700;flex-shrink:0}
+  .r-dist{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--dim);flex-shrink:0}
+  .r-str{display:flex;gap:2px;margin-left:auto;flex-shrink:0}
+  .r-str .b{width:5px;height:11px;border-radius:1.5px;background:var(--faint)}
+  .r-str .b.on{background:var(--red)}
+  .r-label{font-size:9px;font-weight:800;color:var(--gold);flex-shrink:0;width:30px;text-align:right}
+  .r-label.passed-l{color:var(--faint)}
+  .now-line{display:flex;align-items:center;gap:8px;padding:5px 0;margin:2px 0}
+  .now-line .l{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--green),transparent)}
+  .now-line .t{font-size:9.5px;color:var(--green);font-weight:700;font-family:ui-monospace,monospace}
+  .sup-title{font-size:9px;color:var(--faint);letter-spacing:.1em;margin:8px 0 2px}
+  .legend{display:flex;gap:12px;font-size:9.5px;color:var(--faint);margin:4px 2px 14px;flex-wrap:wrap}
+  .legend span{display:flex;align-items:center;gap:4px}
+  .lg{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .empty{text-align:center;color:var(--faint);font-size:12px;padding:30px;line-height:1.8}
+  .status{font-size:10px;color:var(--dim);text-align:right;margin-bottom:8px}
+  .status .live{color:var(--green)}
+</style>
+</head>
+<body>
+<header><h1><span class="dot"></span>TPラダー</h1><span class="status" id="status">待機</span></header>
+<div class="sub">利確目標の地図。近い壁から順に <b style="color:var(--blue)">4H</b> → <b style="color:var(--gold)">日足</b> → <b style="color:var(--purple)">週足</b> と積み上げ。壁を抜けたら自動で次のTPに繰り上がる。バー■■■は複数時間軸が重なる壁＝強い。</div>
+
+<div class="add-row">
+  <input id="in-sym" placeholder="銘柄を追加 (SOL, AAVE...)" autocapitalize="characters">
+  <button class="btn-add" onclick="addCoin()">追加</button>
+</div>
+<div class="presets" id="presets"></div>
+<div class="legend">
+  <span><span class="lg" style="background:var(--blue)"></span>4時間足の壁</span>
+  <span><span class="lg" style="background:var(--gold)"></span>日足の壁</span>
+  <span><span class="lg" style="background:var(--purple)"></span>週足の壁</span>
+  <span>■の数=重なる時間軸数(強さ)</span>
+</div>
+
+<div id="list"><div class="empty">ポジション銘柄を追加すると、<br>上の利確目標と下のサポートが階段状に表示されます。</div></div>
+
+<script>
+const KLINE_API="https://api.crypto.com/exchange/v1/public/get-candlestick";
+const TICKER_API="https://api.crypto.com/exchange/v1/public/get-tickers";
+const LS="tp_ladder_v1";
+const SWING_LB=3, CLUSTER_PCT=0.4, MAX_UP=6, MAX_DN=2, POLL_MS=8000;
+const PRESET=["BTC","ETH","SOL","AAVE","SUI","XRP","LINK","ONDO","WLD","XLM"];
+let coins=[];            // [{sym}]
+let ladders={};          // sym -> {levels:[{p,tfs,mainTf,strength}], sups:[...], ts}
+let prices={};           // sym -> last
+let loading={};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const $=id=>document.getElementById(id);
+try{ coins=JSON.parse(localStorage.getItem(LS)||"[]"); }catch(e){ coins=[]; }
+const save=()=>{try{localStorage.setItem(LS,JSON.stringify(coins))}catch(e){}};
+const fmt=n=>{ if(n==null)return"—"; if(n>=1000)return n.toLocaleString("en-US",{maximumFractionDigits:1}); if(n>=1)return n.toFixed(3); if(n>=0.001)return n.toFixed(5); return n.toPrecision(4); };
+
+// ── スイング検出 ──
+function swings(arr,lb,isHigh){
+  const o=[];
+  for(let i=lb;i<arr.length-lb;i++){
+    let ok=true;
+    for(let j=1;j<=lb;j++){
+      if(isHigh){ if(arr[i]<=arr[i-j]||arr[i]<=arr[i+j]){ok=false;break;} }
+      else{ if(arr[i]>=arr[i-j]||arr[i]>=arr[i+j]){ok=false;break;} }
+    }
+    if(ok)o.push(arr[i]);
+  }
+  return o;
+}
+// ── マルチソース取得: Crypto.com → Bybit → Binance の順で試す ──
+const TF_MAP={
+  cryptocom:{ "4h":"4h", "1D":"1D", "1W":"1W" },
+  bybit:    { "4h":"240","1D":"D",  "1W":"W"  },
+  binance:  { "4h":"4h", "1D":"1d", "1W":"1w" },
+};
+const SRC_LABEL={cryptocom:"Crypto.com", bybit:"Bybit", binance:"Binance"};
+let coinSource={};   // sym -> "cryptocom"|"bybit"|"binance"
+
+async function fetchOne(src,sym,tfKey){
+  const tf=TF_MAP[src][tfKey];
+  try{
+    if(src==="cryptocom"){
+      const res=await fetch(KLINE_API+"?instrument_name="+sym+"_USDT&timeframe="+tf+"&count=200");
+      const j=await res.json();
+      let d=(j.result&&j.result.data)||j.data||[];
+      if(d.length<SWING_LB*2+3)return null;
+      d.sort((a,b)=>(a.t||new Date(a.timestamp).getTime())-(b.t||new Date(b.timestamp).getTime()));
+      return {highs:d.map(x=>parseFloat(x.h!=null?x.h:x.high)),
+              lows:d.map(x=>parseFloat(x.l!=null?x.l:x.low)),
+              close:parseFloat(d[d.length-1].c!=null?d[d.length-1].c:d[d.length-1].close)};
+    }
+    if(src==="bybit"){
+      // 先物(linear)→現物(spot)の順
+      for(const cat of ["linear","spot"]){
+        const res=await fetch("https://api.bybit.com/v5/market/kline?category="+cat+"&symbol="+sym+"USDT&interval="+tf+"&limit=200");
+        const j=await res.json();
+        const list=(j.result&&j.result.list)||[];
+        if(list.length>=SWING_LB*2+3){
+          const d=[...list].reverse();   // Bybitは新しい順で返す
+          return {highs:d.map(x=>parseFloat(x[2])), lows:d.map(x=>parseFloat(x[3])),
+                  close:parseFloat(d[d.length-1][4])};
+        }
+      }
+      return null;
+    }
+    if(src==="binance"){
+      const res=await fetch("https://api.binance.com/api/v3/klines?symbol="+sym+"USDT&interval="+tf+"&limit=200");
+      const j=await res.json();
+      if(!Array.isArray(j)||j.length<SWING_LB*2+3)return null;
+      return {highs:j.map(x=>parseFloat(x[2])), lows:j.map(x=>parseFloat(x[3])),
+              close:parseFloat(j[j.length-1][4])};
+    }
+  }catch(e){ return null; }
+  return null;
+}
+async function fetchTF(sym,tfKey){
+  // 既にソース確定済みならそこだけ、未確定なら順に試して確定
+  if(coinSource[sym]) return fetchOne(coinSource[sym],sym,tfKey);
+  for(const src of ["cryptocom","bybit","binance"]){
+    const d=await fetchOne(src,sym,tfKey);
+    if(d){ coinSource[sym]=src; return d; }
+    await sleep(80);
+  }
+  return null;
+}
+
+// ── クラスタリング（近接レベルを束ねて高TF代表・強度=重なり数）──
+function clusterLevels(levels){
+  const rank={"4H":1,"1D":2,"1W":3};
+  const sorted=[...levels].sort((a,b)=>a.p-b.p);
+  const out=[];
+  for(const lv of sorted){
+    const last=out[out.length-1];
+    if(last && Math.abs(lv.p-last.p)/last.p*100<=CLUSTER_PCT){
+      last.tfs.add(lv.tf);
+      if(rank[lv.tf]>rank[last.mainTf]){ last.mainTf=lv.tf; last.p=lv.p; }
+    } else out.push({p:lv.p, tfs:new Set([lv.tf]), mainTf:lv.tf});
+  }
+  return out.map(c=>({p:c.p, mainTf:c.mainTf, strength:c.tfs.size}));
+}
+
+async function buildLadder(sym){
+  loading[sym]=true; render();
+  const resLv=[], supLv=[];
+  let price=null;
+  for(const tfKey of ["4h","1D","1W"]){
+    const d=await fetchTF(sym,tfKey);
+    await sleep(110);
+    if(!d)continue;
+    if(price==null)price=d.close;
+    const tag=tfKey==="4h"?"4H":tfKey;
+    [...new Set(swings(d.highs,SWING_LB,true))].forEach(p=>{ if(p>0)resLv.push({p,tf:tag}); });
+    [...new Set(swings(d.lows,SWING_LB,false))].forEach(p=>{ if(p>0)supLv.push({p,tf:tag}); });
+  }
+  if(price==null){ loading[sym]=false; ladders[sym]=null; delete coinSource[sym]; render(); return; }
+  prices[sym]=prices[sym]||price;
+  ladders[sym]={ res:clusterLevels(resLv), sup:clusterLevels(supLv).reverse(), ts:Date.now() };
+  loading[sym]=false;
+  render();
+}
+
+// ── ライブ価格（ソース別）──
+async function poll(){
+  if(coins.length===0)return;
+  try{
+    // Crypto.com組はまとめて1回
+    if(coins.some(c=>coinSource[c.sym]==="cryptocom")){
+      const res=await fetch(TICKER_API);
+      const j=await res.json();
+      const data=(j.result&&j.result.data)||j.data||[];
+      for(const t of data){
+        const inst=t.instrument_name||t.i;
+        const m=coins.find(c=>coinSource[c.sym]==="cryptocom"&&inst===c.sym+"_USDT");
+        if(m){ const p=parseFloat(t.last||t.a||0); if(p>0)prices[m.sym]=p; }
+      }
+    }
+    // Bybit/Binance組は個別に
+    for(const c of coins){
+      const src=coinSource[c.sym];
+      if(src==="bybit"){
+        try{
+          let j=await (await fetch("https://api.bybit.com/v5/market/tickers?category=linear&symbol="+c.sym+"USDT")).json();
+          let row=(j.result&&j.result.list&&j.result.list[0])||null;
+          if(!row){ j=await (await fetch("https://api.bybit.com/v5/market/tickers?category=spot&symbol="+c.sym+"USDT")).json(); row=(j.result&&j.result.list&&j.result.list[0])||null; }
+          if(row){ const p=parseFloat(row.lastPrice); if(p>0)prices[c.sym]=p; }
+        }catch(e){}
+        await sleep(60);
+      } else if(src==="binance"){
+        try{
+          const j=await (await fetch("https://api.binance.com/api/v3/ticker/price?symbol="+c.sym+"USDT")).json();
+          const p=parseFloat(j.price); if(p>0)prices[c.sym]=p;
+        }catch(e){}
+        await sleep(60);
+      }
+    }
+    $("status").innerHTML='<span class="live">● ライブ</span> '+new Date().toLocaleTimeString("ja-JP");
+    render();
+  }catch(e){ $("status").textContent="接続エラー"; }
+}
+
+// ── UI ──
+function addCoin(symArg){
+  const sym=(symArg|| $("in-sym").value||"").trim().toUpperCase();
+  if(!sym)return;
+  if(coins.find(c=>c.sym===sym)){ $("in-sym").value=""; return; }
+  coins.push({sym}); save();
+  $("in-sym").value="";
+  buildLadder(sym);
+}
+function delCoin(sym){
+  coins=coins.filter(c=>c.sym!==sym); delete ladders[sym]; save(); render();
+}
+function renderPresets(){
+  $("presets").innerHTML=PRESET.map(s=>`<button class="chip" onclick="addCoin('${s}')">＋${s}</button>`).join("");
+}
+
+function render(){
+  const box=$("list");
+  if(coins.length===0){ box.innerHTML='<div class="empty">ポジション銘柄を追加すると、<br>上の利確目標と下のサポートが階段状に表示されます。</div>'; return; }
+  box.innerHTML=coins.map(c=>{
+    const sym=c.sym, price=prices[sym], L=ladders[sym];
+    let body="";
+    if(loading[sym]) body='<div class="c-loading">4H / 日足 / 週足 を取得中…（Crypto.com→Bybit→Binanceの順で探します）</div>';
+    else if(!L) body='<div class="c-loading">3取引所とも見つかりませんでした。ティッカー名を確認してください（例: PEPE, WIF など取引所の表記そのまま）</div>';
+    else if(price){
+      // 上の壁: 未達のみをTP1,TP2...、直近で抜けた壁は薄く表示（最大2本）
+      const above=L.res.filter(l=>l.p>price*1.001);
+      const passed=L.res.filter(l=>l.p<=price*1.001).slice(-2);
+      const below=L.sup.filter(l=>l.p<price*0.999).slice(0,MAX_DN);
+      const tfCls={"4H":"h4","1D":"d1","1W":"w1"};
+      const rung=(l,i,isPassed,isTp1)=>{
+        const dist=(l.p-price)/price*100;
+        const bars=[1,2,3].map(n=>`<span class="b ${l.strength>=n?"on":""}"></span>`).join("");
+        const label=isPassed?`<span class="r-label passed-l">突破✓</span>`
+                   : i===0?`<span class="r-label">TP1</span>`
+                   : i>=1&&i<=4?`<span class="r-label" style="color:var(--dim)">TP${i+1}</span>`:`<span class="r-label"></span>`;
+        return `<div class="rung ${isPassed?"passed":""} ${isTp1?"tp1":""}">
+          <span class="r-tag ${tfCls[l.mainTf]}">${l.mainTf==="4H"?"4H":l.mainTf==="1D"?"日足":"週足"}</span>
+          <span class="r-price">$${fmt(l.p)}</span>
+          <span class="r-dist">${dist>=0?"+":""}${dist.toFixed(1)}%</span>
+          <span class="r-str">${bars}</span>${label}</div>`;
+      };
+      // 上から遠い順に並べて表示（週足の天井が上、TP1が現在値のすぐ上に来る）
+      const upRungs=above.slice(0,MAX_UP).reverse().map((l)=>{
+        const idx=above.indexOf(l);
+        return rung(l,idx,false,idx===0);
+      }).join("");
+      const passedRungs=passed.map(l=>rung(l,-1,true,false)).join("");
+      const dnRungs=below.map(l=>{
+        const dist=(l.p-price)/price*100;
+        const bars=[1,2,3].map(n=>`<span class="b ${l.strength>=n?"on":""}" style="background:${l.strength>=n?"var(--green)":"var(--faint)"}"></span>`).join("");
+        const tfCls2={"4H":"h4","1D":"d1","1W":"w1"};
+        return `<div class="rung"><span class="r-tag ${tfCls2[l.mainTf]}">${l.mainTf==="4H"?"4H":l.mainTf==="1D"?"日足":"週足"}</span>
+          <span class="r-price">$${fmt(l.p)}</span><span class="r-dist">${dist.toFixed(1)}%</span>
+          <span class="r-str">${bars}</span><span class="r-label" style="color:var(--green)">支え</span></div>`;
+      }).join("");
+      body=upRungs
+        +`<div class="now-line"><span class="l"></span><span class="t">現在 $${fmt(price)}</span><span class="l"></span></div>`
+        +passedRungs
+        +(dnRungs?`<div class="sup-title">下のサポート（SL/建値の参考）</div>${dnRungs}`:"");
+      if(above.length===0) body=`<div class="c-loading" style="color:var(--gold)">上に既知の壁なし＝史上高値圏。トレール(スイング安値割れ)で引っ張る局面。</div>`+body;
+    } else body='<div class="c-loading">価格待ち…</div>';
+    const srcBadge=coinSource[sym]?`<span style="font-size:8.5px;color:var(--faint);border:1px solid var(--edge);padding:1px 6px;border-radius:4px">${SRC_LABEL[coinSource[sym]]}</span>`:"";
+    return `<div class="coin">
+      <div class="c-head"><span class="c-sym">${sym}</span><span class="c-price">${price?"$"+fmt(price):""}</span>${srcBadge}
+      <button class="c-del" onclick="delCoin('${sym}')">✕</button></div>${body}</div>`;
+  }).join("");
+}
+
+// 初期化: 保存済み銘柄のラダーを順次構築
+renderPresets(); render();
+(async()=>{ for(const c of coins){ await buildLadder(c.sym); } })();
+setInterval(poll,POLL_MS); poll();
+setInterval(()=>{  // ラダー自体も30分ごとに再構築（新しいスイング反映）
+  for(const c of coins){ const L=ladders[c.sym]; if(!L||Date.now()-L.ts>1800000) buildLadder(c.sym); }
+},300000);
+</script>
+</body>
+</html>
